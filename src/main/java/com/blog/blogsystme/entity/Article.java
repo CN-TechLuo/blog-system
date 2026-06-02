@@ -9,7 +9,7 @@ public class Article {
     private Integer id;
     private String title;
     private String content;
-    private Integer authorId;
+    private Integer userId;
     private Integer viewCount;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

@@ -22,4 +22,12 @@ public interface ArticleMapper {
 
     @Delete("DELETE FROM article WHERE id = #{id}")
     int deleteById(Integer id);
+
+    // 查询文章总数（用于分页）
+    @Select("SELECT COUNT(*) FROM article")
+    int count();
+
+    // 分页查询：按发布时间倒序，从 start 开始取 pageSize 条
+    @Select("SELECT * FROM article ORDER BY create_time DESC LIMIT #{start}, #{pageSize}")
+    List<Article> findByPage(@Param("start") int start, @Param("pageSize") int pageSize);
 }

@@ -1,18 +1,18 @@
 package com.blog.blogsystme.controller;
 
 import com.blog.blogsystme.Util.JwtUtil;
+import com.blog.blogsystme.dto.PageResponse;
 import com.blog.blogsystme.entity.Article;
 import com.blog.blogsystme.entity.User;
 import com.blog.blogsystme.mapper.ArticleMapper;
 import com.blog.blogsystme.mapper.UserMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-    @RestController
+import java.util.List;
+
+@RestController
     @RequestMapping("/api/article")
     public class ArticleController {
 
@@ -40,9 +40,25 @@ import org.springframework.web.bind.annotation.RestController;
                 return "用户不存在";
             }
             // 4. 设置作者 ID 并保存
-            article.setAuthorId(user.getId());
+            article.setUserId(user.getId());
             int rows = articleMapper.insert(article);
             return rows > 0 ? "发布成功，文章 ID=" + article.getId() : "发布失败";
+        }
+        @GetMapping("/list")
+    public PageResponse list(@RequestParam (defaultValue = "1")int page,
+                             @RequestParam (defaultValue = "10") int pageSize) {
+            if (page < 1)
+                page = 1;
+
+            if (pageSize < 1)
+                pageSize = 10;
+
+            if (pageSize > 100)
+                pageSize = 100;
+            int start = (page - 1) * pageSize;
+            List<Article>articles = articleMapper.findByPage(start, pageSize);
+            int total =  articleMapper.count();
+            return new PageResponse(true,"查询成功",articles,total,page,pageSize);
         }
     }
 
