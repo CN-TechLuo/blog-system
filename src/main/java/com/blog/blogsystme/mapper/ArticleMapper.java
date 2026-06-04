@@ -14,6 +14,7 @@ public interface ArticleMapper {
     @Select("SELECT * FROM article WHERE id = #{id}")
     Article findById(Integer id);
 
+
     @Select("SELECT * FROM article ORDER BY create_time DESC")
     List<Article> findAll();
 
@@ -30,4 +31,6 @@ public interface ArticleMapper {
     // 分页查询：按发布时间倒序，从 start 开始取 pageSize 条
     @Select("SELECT * FROM article ORDER BY create_time DESC LIMIT #{start}, #{pageSize}")
     List<Article> findByPage(@Param("start") int start, @Param("pageSize") int pageSize);
+
+
 }
