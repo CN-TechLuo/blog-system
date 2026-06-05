@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.awt.*;
 import java.util.List;
 
 @RestController
@@ -62,14 +63,87 @@ public class ArticleController {
         List<Article>articles = articleMapper.findByPage(start, pageSize);
         int total =  articleMapper.count();
         return new PageResponse(true,"查询成功",articles,total,page,pageSize);
-    }@GetMapping("/{id}")
+    }
+
+    @GetMapping("/{id}")
     public ResponseEntity<?> detail(@PathVariable Integer id) {
         Article article = articleMapper.findById(id);
         if (article == null) {
-            // 直接返回 404 状态码 + 错误信息，不用 CommonResponse
+            // 直接返回 404 状态码 + 错误信息，
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("文章不存在");
         }
         return ResponseEntity.ok(article);
     }
+    public Integer getCurrentUserId(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return null;
+        }
+        String token = authHeader.substring(7);
+        String username = JwtUtil.getUsernameFromToken(token);
+        if (username == null) {
+            return null;
+        }
+        User user = userMapper.findByUsername(username);
+        return user != null ? user.getId() : null;
+    }
 
-}
+    @PutMapping("/update")
+    public ResponseEntity<?> update(@RequestBody Article article, HttpServletRequest request) {
+
+        //获取当前登入用户Id
+        Integer currentUserId = getCurrentUserId(request);
+        if (currentUserId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("未登入或 token无效");
+        }
+
+        //查询原文章
+        Article existingArticle = articleMapper.findById(article.getId());
+        if (existingArticle == null) {
+            return ResponseEntity.badRequest().body("文章不存在");
+        }
+
+        //验证作者身份(仅作者可编辑)
+        if (!existingArticle.getUserId().equals(currentUserId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("无权限编辑此文件");
+        }
+
+        //更近文章(仅更新标题和文章)
+        existingArticle.setTitle(article.getTitle());
+        existingArticle.setContent(article.getContent());
+        int rows = articleMapper.update(existingArticle);
+        if (rows > 0) {
+            return ResponseEntity.ok("编辑成功");
+        } else {
+            return ResponseEntity.badRequest().body("编辑失败");
+        }
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> delete(@PathVariable Integer id, HttpServletRequest request) {
+        Integer currentUserId = getCurrentUserId(request);
+        if (currentUserId == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("未登入或 token 无效");
+            }
+
+            //查询原文章
+            Article article = articleMapper.findById(id);
+            if (article == null) {
+                return ResponseEntity.badRequest().body("文章不存在");
+            }
+
+            //验证作者身份
+            if (!article.getUserId().equals(currentUserId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("无权限删除此文章");
+            }
+
+            //删除
+            int rows = articleMapper.deleteById(id);
+                    if(rows > 0) {
+                        return ResponseEntity.ok("删除成功");
+                    }else{
+                        return ResponseEntity.badRequest().body("删除失败");
+                    }
+        }
+
+    }
