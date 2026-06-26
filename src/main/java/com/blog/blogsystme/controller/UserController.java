@@ -1,108 +1,95 @@
 package com.blog.blogsystme.controller;
 
-import com.blog.blogsystme.Util.JwtUtil;
-import com.blog.blogsystme.Util.PasswordUtil;
+import com.blog.blogsystme.util.JwtUtil;
+import com.blog.blogsystme.util.PasswordUtil;
+import com.blog.blogsystme.dto.ApiResponse;
 import com.blog.blogsystme.dto.LoginRequest;
 import com.blog.blogsystme.entity.User;
 import com.blog.blogsystme.mapper.UserMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
 
 import java.util.HashMap;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/user")  // 这个控制器的所有接口都以 /api/user 开头
+@RequestMapping("/api/user")
 
 public class UserController {
 
+    private static final Logger log = LoggerFactory.getLogger(UserController.class);
+
     @Autowired
-    private UserMapper userMapper;  // 注入UserMapper，用来操作数据库
+    private UserMapper userMapper;
 
-    // 注册接口：POST /api/user/register
-    // 请求体格式：JSON {"username":"张三","password":"123456","email":"zhang@example.com"}
+    /**
+     * 注册接口：POST /api/user/register
+     */
     @PostMapping("/register")
-    public RegisterResponse register(@RequestBody User user) {
+    public ResponseEntity<ApiResponse<Object>> register(@Valid @RequestBody User user) {
 
-        System.out.println("接到注册请求:" + user.getUsername());
+        log.debug("收到注册请求: username={}", user.getUsername());
 
         // 1. 检查用户名是否已存在
         User existUser = userMapper.findByUsername(user.getUsername());
 
-        System.out.println("查询结果:" + existUser);
-
         if (existUser != null) {
-            return new RegisterResponse(false,"用户名已存在，注册失败") ;
+            log.info("注册失败: 用户名 {} 已存在", user.getUsername());
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.fail("用户名已存在，注册失败"));
         }
-        //密码加密
+
+        // 2. 密码 BCrypt 加密
         String encodedPassword = PasswordUtil.encode(user.getPassword());
-        user.setPassword(encodedPassword);//加密后的密码返回user对象
-        // 2. 密码加密
+        user.setPassword(encodedPassword);
+
         // 3. 插入数据库
         int rows = userMapper.insert(user);
 
-        System.out.println("插入影响行数:" + rows);
+        log.info("注册结果: username={}, rows={}", user.getUsername(), rows);
 
         if (rows > 0) {
-
-            return new RegisterResponse(true,"注册成功") ;
+            return ResponseEntity.ok(ApiResponse.success("注册成功"));
         } else {
-            return new RegisterResponse(false,"注册失败，请稍后重试");
-    }
-
-    }
-    class RegisterResponse{
-        private boolean success;    //是否成功
-        private String message; //提示信息
-
-        //构造方法
-        public RegisterResponse(boolean success, String message) {
-            this.success = success;
-            this.message = message;
-        }
-
-        //getter和setter(转成JSON）
-        public boolean isSuccess() {
-            return success;
-        }
-
-        public void setSuccess(boolean success) {
-            this.success = success;
-        }
-        public String getMessage() {
-            return message;
-        }
-        public void setMessage(String message) {
-            this.message = message;
+            return ResponseEntity.internalServerError()
+                    .body(ApiResponse.fail("注册失败，请稍后重试"));
         }
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> login(@Valid @RequestBody LoginRequest loginRequest) {
+        log.debug("收到登录请求: username={}", loginRequest.getUsername());
+
         // 1. 根据用户名查询用户
         User user = userMapper.findByUsername(loginRequest.getUsername());
         if (user == null) {
-            return ResponseEntity.badRequest().body(new RegisterResponse(false, "用户不存在"));
+            log.info("登录失败: 用户 {} 不存在", loginRequest.getUsername());
+            return ResponseEntity.badRequest().body(ApiResponse.fail("用户不存在"));
         }
 
-        // 2. 验证密码（用 Bcrypt 的 matches 方法）
+        // 2. 验证密码（Bcrypt matches）
         boolean matched = PasswordUtil.matches(loginRequest.getPassword(), user.getPassword());
         if (!matched) {
-            return ResponseEntity.badRequest().body(new RegisterResponse(false, "密码错误"));
+            log.info("登录失败: 用户名 {} 密码错误", loginRequest.getUsername());
+            return ResponseEntity.badRequest().body(ApiResponse.fail("密码错误"));
         }
 
         // 3. 生成 JWT token
         String token = JwtUtil.generateToken(user.getUsername());
 
-        // 4. 返回结果
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("message", "登录成功");
-        result.put("token", token);
-        result.put("username", user.getUsername());
+        log.info("登录成功: username={}", user.getUsername());
 
-        return ResponseEntity.ok(result);
+        // 4. 返回结果
+        Map<String, Object> data = new HashMap<>();
+        data.put("token", token);
+        data.put("username", user.getUsername());
+        data.put("userId", user.getId());
+        return ResponseEntity.ok(ApiResponse.success("登录成功", data));
     }
 
 }

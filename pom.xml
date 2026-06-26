@@ -9,9 +9,9 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.blog</groupId>
-    <artifactId>blog-systme</artifactId>
+    <artifactId>blog-system</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>blog-systme</name>
+    <name>blog-system</name>
     <description>blog-system</description>
     <url/>
     <licenses>
@@ -28,7 +28,6 @@
     </scm>
     <properties>
         <java.version>17</java.version>
-        <spring-security.version>7.0.5</spring-security.version>
     </properties>
     <dependencies>
         <dependency>
@@ -69,11 +68,22 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- 参数校验 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- 应用监控与健康检查 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- Bcrypt 密码加密 -->
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
-            <version>6.4.5</version>
         </dependency>
 
         <!-- JWT 相关 -->

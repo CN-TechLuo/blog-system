@@ -1,4 +1,4 @@
-package com.blog.blogsystme.Util;
+package com.blog.blogsystme.util;
 
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 

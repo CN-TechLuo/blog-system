@@ -7,30 +7,33 @@ import java.util.List;
 @Mapper
 public interface ArticleMapper {
 
-    @Insert("INSERT INTO article (title, content, user_id) VALUES (#{title}, #{content}, #{authorId})")
+    @Insert("INSERT INTO article (title, content, user_id) VALUES (#{title}, #{content}, #{userId})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(Article article);
 
     @Select("SELECT * FROM article WHERE id = #{id}")
     Article findById(Integer id);
 
-
     @Select("SELECT * FROM article ORDER BY create_time DESC")
     List<Article> findAll();
 
-    @Update("UPDATE article SET title = #{title}, content = #{content} WHERE id = #{id}")
-    int update(Article article);
+    /** SQL 层面鉴权更新：仅作者本人可更新 */
+    @Update("UPDATE article SET title = #{title}, content = #{content} WHERE id = #{id} AND user_id = #{userId}")
+    int updateByAuthor(Article article);
 
-    @Delete("DELETE FROM article WHERE id = #{id}")
-    int deleteById(Integer id);
+    /** SQL 层面鉴权删除：仅作者本人可删除 */
+    @Delete("DELETE FROM article WHERE id = #{id} AND user_id = #{userId}")
+    int deleteByIdAndAuthor(@Param("id") Integer id, @Param("userId") Integer userId);
 
-    // 查询文章总数（用于分页）
+    /** 查询文章总数（用于分页） */
     @Select("SELECT COUNT(*) FROM article")
     int count();
 
-    // 分页查询：按发布时间倒序，从 start 开始取 pageSize 条
-    @Select("SELECT * FROM article ORDER BY create_time DESC LIMIT #{start}, #{pageSize}")
+    /**
+     * 分页查询：列表页不返回 content 大字段，减少数据传输
+     */
+    @Select("SELECT id, title, user_id, view_count, create_time, update_time " +
+            "FROM article ORDER BY create_time DESC LIMIT #{start}, #{pageSize}")
     List<Article> findByPage(@Param("start") int start, @Param("pageSize") int pageSize);
-
 
 }
