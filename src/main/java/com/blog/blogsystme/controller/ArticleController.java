@@ -1,12 +1,11 @@
 package com.blog.blogsystme.controller;
 
 import com.blog.blogsystme.util.JwtUtil;
+import com.blog.blogsystme.util.XssUtil;
 import com.blog.blogsystme.dto.ApiResponse;
 import com.blog.blogsystme.dto.PageResponse;
 import com.blog.blogsystme.entity.Article;
-import com.blog.blogsystme.entity.User;
 import com.blog.blogsystme.mapper.ArticleMapper;
-import com.blog.blogsystme.mapper.UserMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,8 +26,6 @@ public class ArticleController {
 
     @Autowired
     private ArticleMapper articleMapper;
-    @Autowired
-    private UserMapper userMapper;
 
     @PostMapping("/create")
     public ResponseEntity<ApiResponse<Long>> create(@Valid @RequestBody Article article, HttpServletRequest request) {
@@ -39,8 +36,10 @@ public class ArticleController {
                     .body(ApiResponse.fail("未登录或 token 无效"));
         }
 
-        // 2. 设置作者 ID 并保存
+        // 2. 设置作者 ID、XSS 过滤并保存
         article.setUserId(currentUserId);
+        article.setTitle(XssUtil.escape(article.getTitle()));
+        article.setContent(XssUtil.escape(article.getContent()));
         int rows = articleMapper.insert(article);
 
         if (rows > 0) {
@@ -87,15 +86,8 @@ public class ArticleController {
             return null;
         }
         String token = authHeader.substring(7);
-        if (!JwtUtil.validateToken(token)) {
-            return null;
-        }
-        String username = JwtUtil.getUsernameFromToken(token);
-        if (username == null) {
-            return null;
-        }
-        User user = userMapper.findByUsername(username);
-        return user != null ? user.getId() : null;
+        // 直接从 JWT claims 获取 userId（getUserIdFromToken 内置异常处理，无效 token 返回 null）
+        return JwtUtil.getUserIdFromToken(token);
     }
 
     @PutMapping("/update")
@@ -107,8 +99,10 @@ public class ArticleController {
                     .body(ApiResponse.fail("未登录或 token 无效"));
         }
 
-        // 设置作者 ID，由 SQL 层鉴权（WHERE id = #{id} AND user_id = #{userId}）
+        // 设置作者 ID、XSS 过滤，由 SQL 层鉴权（WHERE id = #{id} AND user_id = #{userId}）
         article.setUserId(currentUserId);
+        article.setTitle(XssUtil.escape(article.getTitle()));
+        article.setContent(XssUtil.escape(article.getContent()));
         int rows = articleMapper.updateByAuthor(article);
 
         if (rows > 0) {

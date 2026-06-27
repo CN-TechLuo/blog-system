@@ -14,7 +14,12 @@ public interface ArticleMapper {
     @Select("SELECT * FROM article WHERE id = #{id}")
     Article findById(Integer id);
 
-    @Select("SELECT * FROM article ORDER BY create_time DESC")
+    /**
+     * @deprecated 该方法返回硬编码 LIMIT 100，无分页参数，可能静默截断数据。
+     *             请使用 {@link #findByPage(int, int)} 配合 {@link #count()} 进行分页查询。
+     */
+    @Deprecated
+    @Select("SELECT * FROM article ORDER BY create_time DESC LIMIT 100")
     List<Article> findAll();
 
     /** SQL 层面鉴权更新：仅作者本人可更新 */
