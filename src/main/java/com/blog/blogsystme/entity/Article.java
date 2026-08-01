@@ -18,4 +18,7 @@ public class Article {
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
+    /** 作者名（非数据库字段，查询时填充） */
+    private transient String authorName;
+
 }

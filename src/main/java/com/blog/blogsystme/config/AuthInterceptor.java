@@ -21,8 +21,7 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        // GET 请求为公开端点（列表、详情），无需认证
-        if ("GET".equalsIgnoreCase(request.getMethod())) {
+        if (request.getRequestURI().startsWith("/api/article/") && "GET".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
 

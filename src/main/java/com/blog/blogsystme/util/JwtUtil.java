@@ -5,6 +5,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import javax.crypto.SecretKey;
 import java.util.Base64;
 import java.util.Date;
@@ -13,28 +14,24 @@ public class JwtUtil {
 
     private static final Logger log = LoggerFactory.getLogger(JwtUtil.class);
 
-    // JWT 密钥：优先级 系统属性 -Djwt.secret > 环境变量 JWT_SECRET > Spring配置 jwt.secret
-    // 生产环境必须通过环境变量注入
-    // 生成密钥: openssl rand -base64 32
     private static volatile String SECRET;
     private static volatile SecretKey KEY;
+
+    /** Access Token 有效期：2 小时 */
+    public static final long ACCESS_EXPIRATION_MS = 2 * 60 * 60 * 1000L;
+
+    /** Refresh Token 有效期：7 天 */
+    public static final long REFRESH_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000L;
 
     static {
         initKey();
     }
 
-    /**
-     * 初始化密钥，必须通过环境变量或系统属性配置，未配置则拒绝启动
-     */
     private static synchronized void initKey() {
         if (KEY != null) return;
         String secret = resolveSecret();
         if (secret == null || secret.isBlank()) {
-            log.error("============================================");
             log.error("JWT 密钥未配置！应用无法启动");
-            log.error("请设置环境变量 JWT_SECRET 或系统属性 -Djwt.secret");
-            log.error("生成密钥命令: openssl rand -base64 32");
-            log.error("============================================");
             throw new IllegalStateException(
                     "JWT_SECRET 环境变量或 -Djwt.secret 系统属性必须配置。生成命令: openssl rand -base64 32");
         }
@@ -45,25 +42,23 @@ public class JwtUtil {
 
     private static String resolveSecret() {
         String secret = System.getProperty("jwt.secret");
-        if (secret != null && !secret.isBlank()) {
-            return secret;
-        }
+        if (secret != null && !secret.isBlank()) return secret;
         secret = System.getenv("JWT_SECRET");
-        if (secret != null && !secret.isBlank()) {
-            return secret;
-        }
+        if (secret != null && !secret.isBlank()) return secret;
         return null;
     }
 
-    /** Token 有效期：2小时（毫秒） */
-    public static final long EXPIRATION_MS = 2 * 60 * 60 * 1000L;
+    public static String generateAccessToken(Integer userId, String username) {
+        return generateToken(userId, username, ACCESS_EXPIRATION_MS);
+    }
 
-    /**
-     * 生成 JWT token，包含 userId 和 username 两个 claims
-     */
-    public static String generateToken(Integer userId, String username) {
+    public static String generateRefreshToken(Integer userId, String username) {
+        return generateToken(userId, username, REFRESH_EXPIRATION_MS);
+    }
+
+    private static String generateToken(Integer userId, String username, long expirationMs) {
         Date now = new Date();
-        Date expiration = new Date(now.getTime() + EXPIRATION_MS);
+        Date expiration = new Date(now.getTime() + expirationMs);
         return Jwts.builder()
                 .subject(username)
                 .claim("userId", userId)
@@ -73,9 +68,6 @@ public class JwtUtil {
                 .compact();
     }
 
-    /**
-     * 安全获取用户名，token 无效时返回 null
-     */
     public static String getUsernameFromToken(String token) {
         try {
             return parseToken(token).getSubject();
@@ -84,10 +76,6 @@ public class JwtUtil {
         }
     }
 
-    /**
-     * 从 token 中提取 userId，避免额外的数据库查询。
-     * token 无效或 claim 缺失时返回 null。
-     */
     public static Integer getUserIdFromToken(String token) {
         try {
             Claims claims = parseToken(token);
@@ -106,7 +94,4 @@ public class JwtUtil {
                 .getPayload();
     }
 
-    public static boolean validateToken(String token) {
-        return getUsernameFromToken(token) != null;
-    }
 }

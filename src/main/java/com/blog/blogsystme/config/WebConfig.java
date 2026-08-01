@@ -38,9 +38,10 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 拦截所有 /api/article/** 写操作（POST/PUT/DELETE），GET 请求在拦截器内部放行
         registry.addInterceptor(authInterceptor)
-                .addPathPatterns("/api/article/**");
+                .addPathPatterns("/api/article/**")
+                .addPathPatterns("/api/user/me")
+                .addPathPatterns("/api/user/password");
     }
 
 }

@@ -1,17 +1,17 @@
 package com.blog.blogsystme.controller;
 
+import com.blog.blogsystme.dto.ApiResponse;
 import com.blog.blogsystme.dto.ArticleCreateRequest;
 import com.blog.blogsystme.dto.ArticleUpdateRequest;
-import com.blog.blogsystme.dto.ApiResponse;
 import com.blog.blogsystme.dto.PageResponse;
 import com.blog.blogsystme.entity.Article;
-import com.blog.blogsystme.mapper.ArticleMapper;
-import com.blog.blogsystme.util.XssUtil;
+import com.blog.blogsystme.service.ArticleService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -19,116 +19,72 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/article")
+@Tag(name = "文章管理", description = "文章 CRUD + 搜索")
 public class ArticleController {
 
     private static final Logger log = LoggerFactory.getLogger(ArticleController.class);
 
-    @Autowired
-    private ArticleMapper articleMapper;
+    private final ArticleService articleService;
+
+    public ArticleController(ArticleService articleService) {
+        this.articleService = articleService;
+    }
 
     @PostMapping("/create")
+    @Operation(summary = "发布文章")
     public ResponseEntity<ApiResponse<Long>> create(@Valid @RequestBody ArticleCreateRequest request,
-                                                    HttpServletRequest httpRequest) {
-        Integer currentUserId = (Integer) httpRequest.getAttribute("userId");
-        if (currentUserId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.fail("未登录或 token 无效"));
-        }
-
-        Article article = new Article();
-        article.setTitle(XssUtil.escape(request.getTitle()));
-        article.setContent(XssUtil.sanitizeHtml(request.getContent()));
-        article.setUserId(currentUserId);
-        int rows = articleMapper.insert(article);
-
-        if (rows > 0) {
-            log.info("文章发布成功: id={}, title={}, userId={}", article.getId(), request.getTitle(), currentUserId);
-            return ResponseEntity.ok(ApiResponse.success("发布成功", (long) article.getId()));
-        }
-        return ResponseEntity.internalServerError()
-                .body(ApiResponse.fail("发布失败"));
+                                                    @RequestAttribute("userId") Integer userId) {
+        ApiResponse<Long> result = articleService.create(request, userId);
+        return ResponseEntity.status(result.isSuccess() ? 200 : 500).body(result);
     }
 
     @GetMapping("/list")
+    @Operation(summary = "文章列表（分页）")
     public ResponseEntity<ApiResponse<PageResponse>> list(@RequestParam(defaultValue = "1") int page,
                                                           @RequestParam(defaultValue = "10") int pageSize) {
-        if (page < 1) {
-            page = 1;
-        }
-        if (pageSize < 1) {
-            pageSize = 10;
-        }
-        if (pageSize > 100) {
-            pageSize = 100;
-        }
-        int start = (page - 1) * pageSize;
-        List<Article> articles = articleMapper.findByPage(start, pageSize);
-        int total = articleMapper.count();
-        return ResponseEntity.ok(ApiResponse.success("查询成功",
-                new PageResponse(articles, total, pageSize, page)));
+        return ResponseEntity.ok(articleService.list(page, pageSize));
+    }
+
+    @GetMapping("/search")
+    @Operation(summary = "文章搜索（按标题）")
+    public ResponseEntity<ApiResponse<PageResponse>> search(@RequestParam String keyword,
+                                                            @RequestParam(defaultValue = "1") int page,
+                                                            @RequestParam(defaultValue = "10") int pageSize) {
+        return ResponseEntity.ok(articleService.search(keyword, page, pageSize));
     }
 
     @GetMapping("/{id}")
+    @Operation(summary = "文章详情")
     public ResponseEntity<ApiResponse<Article>> detail(@PathVariable Integer id) {
-        Article article = articleMapper.findById(id);
-        if (article == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.fail("文章不存在"));
+        ApiResponse<Article> result = articleService.detail(id);
+        if (!result.isSuccess()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(result);
         }
-        articleMapper.incrementViewCount(id);
-        article.setViewCount(article.getViewCount() == null ? 1 : article.getViewCount() + 1);
-        return ResponseEntity.ok(ApiResponse.success("查询成功", article));
+        return ResponseEntity.ok(result);
     }
 
     @PutMapping("/update")
+    @Operation(summary = "编辑文章")
     public ResponseEntity<ApiResponse<Void>> update(@Valid @RequestBody ArticleUpdateRequest request,
-                                                    HttpServletRequest httpRequest) {
-        Integer currentUserId = (Integer) httpRequest.getAttribute("userId");
-        if (currentUserId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.fail("未登录或 token 无效"));
-        }
-
-        Article article = new Article();
-        article.setId(request.getId());
-        article.setTitle(XssUtil.escape(request.getTitle()));
-        article.setContent(XssUtil.sanitizeHtml(request.getContent()));
-        article.setUserId(currentUserId);
-        int rows = articleMapper.updateByAuthor(article);
-
-        if (rows > 0) {
-            log.info("文章编辑成功: id={}", request.getId());
-            return ResponseEntity.ok(ApiResponse.success("编辑成功"));
-        }
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(ApiResponse.fail("文章不存在或无权限编辑"));
+                                                    @RequestAttribute("userId") Integer userId) {
+        ApiResponse<Void> result = articleService.update(request, userId);
+        return ResponseEntity.status(result.isSuccess() ? 200 : 403).body(result);
     }
 
     @DeleteMapping("/{id}")
+    @Operation(summary = "删除文章")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Integer id,
-                                                    HttpServletRequest httpRequest) {
-        Integer currentUserId = (Integer) httpRequest.getAttribute("userId");
-        if (currentUserId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.fail("未登录或 token 无效"));
-        }
-
-        int rows = articleMapper.deleteByIdAndAuthor(id, currentUserId);
-        if (rows > 0) {
-            log.info("文章删除成功: id={}", id);
-            return ResponseEntity.ok(ApiResponse.success("删除成功"));
-        }
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(ApiResponse.fail("文章不存在或无权限删除"));
+                                                    @RequestAttribute("userId") Integer userId) {
+        ApiResponse<Void> result = articleService.delete(id, userId);
+        return ResponseEntity.status(result.isSuccess() ? 200 : 403).body(result);
     }
 
 }
