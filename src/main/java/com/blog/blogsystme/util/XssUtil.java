@@ -1,5 +1,8 @@
 package com.blog.blogsystme.util;
 
+import org.jsoup.Jsoup;
+import org.jsoup.safety.Safelist;
+
 /**
  * XSS 过滤工具类
  * 对用户输入的 HTML 特殊字符进行转义，防止存储型 XSS 攻击
@@ -31,6 +34,27 @@ public class XssUtil {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * 使用白名单清理 HTML，保留安全富文本标签，移除危险标签和事件处理器。
+     * 适用于博客文章内容等需要富文本的场景。
+     */
+    public static String sanitizeHtml(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+        return Jsoup.clean(input, Safelist.basicWithImages()
+                .addTags("h1", "h2", "h3", "h4", "h5", "h6", "pre", "code", "blockquote", "hr", "table", "thead", "tbody", "tr", "th", "td", "span", "div")
+                .addAttributes("a", "target", "rel")
+                .addAttributes("img", "width", "height")
+                .addAttributes("code", "class")
+                .addAttributes("pre", "class")
+                .addAttributes("span", "class")
+                .addAttributes("div", "class")
+                .addAttributes("td", "colspan", "rowspan")
+                .addAttributes("th", "colspan", "rowspan")
+                .addProtocols("a", "href", "http", "https", "mailto"));
     }
 
 }

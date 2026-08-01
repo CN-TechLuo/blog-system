@@ -1,0 +1,19 @@
+# ============================================================
+# 本地开发配置模板
+# 使用方法：
+#   1. 复制此文件为 application-local.properties
+#   2. 将占位符替换为你的实际凭据
+#   3. application-local.properties 已在 .gitignore 中排除，不会被提交
+# ============================================================
+
+# 本地数据库（关闭 SSL + 允许公钥检索）
+spring.datasource.url=jdbc:mysql://localhost:3306/blog_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+
+# 本地数据库凭据 —— 请替换为你的实际数据库用户名
+spring.datasource.username=YOUR_DB_USERNAME
+
+# 本地数据库密码 —— 请替换为你的实际数据库密码
+spring.datasource.password=YOUR_DB_PASSWORD
+
+# JWT 开发密钥 —— 请替换为你的 Base64 编码密钥（生成命令：openssl rand -base64 32）
+jwt.secret=YOUR_BASE64_JWT_SECRET

@@ -35,3 +35,7 @@ build/
 ### Local dev secrets (never commit) ###
 .env
 application-local.properties
+
+### AI tooling (never commit) ###
+.kilo/
+.kilocode/

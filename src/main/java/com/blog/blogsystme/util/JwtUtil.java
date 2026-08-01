@@ -55,15 +55,15 @@ public class JwtUtil {
         return null;
     }
 
-    // token 有效期：2小时（毫秒）
-    private static final long EXPIRATION = 2 * 60 * 60 * 1000L;
+    /** Token 有效期：2小时（毫秒） */
+    public static final long EXPIRATION_MS = 2 * 60 * 60 * 1000L;
 
     /**
      * 生成 JWT token，包含 userId 和 username 两个 claims
      */
     public static String generateToken(Integer userId, String username) {
         Date now = new Date();
-        Date expiration = new Date(now.getTime() + EXPIRATION);
+        Date expiration = new Date(now.getTime() + EXPIRATION_MS);
         return Jwts.builder()
                 .subject(username)
                 .claim("userId", userId)

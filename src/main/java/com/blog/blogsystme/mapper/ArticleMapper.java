@@ -30,6 +30,10 @@ public interface ArticleMapper {
     @Delete("DELETE FROM article WHERE id = #{id} AND user_id = #{userId}")
     int deleteByIdAndAuthor(@Param("id") Integer id, @Param("userId") Integer userId);
 
+    /** 浏览量 +1 */
+    @Update("UPDATE article SET view_count = view_count + 1 WHERE id = #{id}")
+    int incrementViewCount(@Param("id") Integer id);
+
     /** 查询文章总数（用于分页） */
     @Select("SELECT COUNT(*) FROM article")
     int count();

@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.6</version>
+        <version>4.1.0</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.blog</groupId>
@@ -68,6 +68,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- H2 内存数据库（仅用于单元测试） -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- 参数校验 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -107,6 +114,12 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- HTML 白名单清理（XSS 防护，同时保留安全富文本标签） -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.18.1</version>
+        </dependency>
 
     </dependencies>
 

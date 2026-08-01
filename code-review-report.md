@@ -10,7 +10,7 @@
 
 **文件：** [`src/main/java/com/blog/blogsystme/util/JwtUtil.java`](src/main/java/com/blog/blogsystme/util/JwtUtil.java:15)
 
-**问题描述：** 虽然优先读取环境变量 `JWT_SECRET` / 系统属性 `jwt.secret`，但存在硬编码的 Base64 默认密钥 `"ZGVmYXVsdC1zZWNyZXQta2V5..."`（解码为 `"default-secret-key-for-development-only-change-in-production"`）。如果运维忘记设置环境变量，应用将以弱密钥启动，所有 Token 可被轻易伪造。
+**问题描述：** 虽然优先读取环境变量 `JWT_SECRET` / 系统属性 `jwt.secret`，但存在硬编码的 Base64 默认密钥。如果运维忘记设置环境变量，应用将以弱密钥启动，所有 Token 可被轻易伪造。
 
 **修复后代码：**
 

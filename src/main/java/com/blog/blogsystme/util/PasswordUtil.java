@@ -4,6 +4,13 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 public class PasswordUtil {
 
+    /**
+     * 密码复杂度正则：必须包含字母、数字和特殊字符，长度 8-50 位。
+     * 供 {@code @Pattern} 注解引用，确保 RegisterRequest 和 User 实体使用统一的密码策略。
+     */
+    public static final String PASSWORD_REGEX =
+        "^(?=.*[a-zA-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?`~]).+$";
+
     // 创建一个 BCryptPasswordEncoder 对象（单例，避免重复创建）
     private static final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 

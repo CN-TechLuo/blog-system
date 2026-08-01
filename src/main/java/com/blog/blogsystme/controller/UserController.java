@@ -1,20 +1,23 @@
 package com.blog.blogsystme.controller;
 
-import com.blog.blogsystme.util.JwtUtil;
-import com.blog.blogsystme.util.PasswordUtil;
 import com.blog.blogsystme.dto.ApiResponse;
 import com.blog.blogsystme.dto.LoginRequest;
+import com.blog.blogsystme.dto.RegisterRequest;
 import com.blog.blogsystme.entity.User;
 import com.blog.blogsystme.mapper.UserMapper;
+import com.blog.blogsystme.util.JwtUtil;
+import com.blog.blogsystme.util.PasswordUtil;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -25,7 +28,6 @@ import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/api/user")
-
 public class UserController {
 
     private static final Logger log = LoggerFactory.getLogger(UserController.class);
@@ -42,7 +44,7 @@ public class UserController {
     private static final ConcurrentHashMap<String, RateWindow> LOGIN_RATE_LIMIT = new ConcurrentHashMap<>();
     private static final int MAX_LOGIN_PER_MINUTE = 5;
 
-    /** 注册速率限制：每个 IP 最多 3 次/分钟（独立于登录限制） */
+    /** 注册速率限制：每个 IP 最多 3 次/分钟 */
     private static final ConcurrentHashMap<String, RateWindow> REGISTER_RATE_LIMIT = new ConcurrentHashMap<>();
     private static final int MAX_REGISTER_PER_MINUTE = 3;
 
@@ -80,43 +82,40 @@ public class UserController {
      * 注册接口：POST /api/user/register
      */
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<Object>> register(@Valid @RequestBody User user,
-                                                         HttpServletRequest request) {
+    public ResponseEntity<ApiResponse<Object>> register(@Valid @RequestBody RegisterRequest registerRequest,
+                                                        HttpServletRequest request) {
         String clientIp = getClientIp(request);
 
-        // 速率限制检查：每个 IP 每分钟最多 3 次注册尝试（独立于登录限制）
         if (recordAndCheckRateLimit(REGISTER_RATE_LIMIT, MAX_REGISTER_PER_MINUTE, clientIp)) {
-            log.warn("注册速率限制触发: IP={}, username={}", clientIp, user.getUsername());
+            log.warn("注册速率限制触发: IP={}, username={}", clientIp, registerRequest.getUsername());
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(ApiResponse.fail("注册请求过于频繁，请稍后重试"));
         }
 
-        log.debug("收到注册请求: username={}", user.getUsername());
+        log.debug("收到注册请求: username={}", registerRequest.getUsername());
 
-        // 1. 检查用户名是否已存在
-        User existUser = userMapper.findByUsername(user.getUsername());
-
+        User existUser = userMapper.findByUsername(registerRequest.getUsername());
         if (existUser != null) {
-            log.info("注册失败: 用户名 {} 已存在", user.getUsername());
+            log.info("注册失败: 用户名 {} 已存在", registerRequest.getUsername());
             return ResponseEntity.badRequest()
                     .body(ApiResponse.fail("用户名已存在，注册失败"));
         }
 
-        // 2. 密码 BCrypt 加密
-        String encodedPassword = PasswordUtil.encode(user.getPassword());
-        user.setPassword(encodedPassword);
+        String encodedPassword = PasswordUtil.encode(registerRequest.getPassword());
 
-        // 3. 插入数据库
+        User user = new User();
+        user.setUsername(registerRequest.getUsername());
+        user.setPassword(encodedPassword);
+        user.setEmail(registerRequest.getEmail());
         int rows = userMapper.insert(user);
 
-        log.info("注册结果: username={}, rows={}", user.getUsername(), rows);
+        log.info("注册结果: username={}, rows={}", registerRequest.getUsername(), rows);
 
         if (rows > 0) {
             return ResponseEntity.ok(ApiResponse.success("注册成功"));
-        } else {
-            return ResponseEntity.internalServerError()
-                    .body(ApiResponse.fail("注册失败，请稍后重试"));
         }
+        return ResponseEntity.internalServerError()
+                .body(ApiResponse.fail("注册失败，请稍后重试"));
     }
 
     @PostMapping("/login")
@@ -124,7 +123,6 @@ public class UserController {
                                                                    HttpServletRequest request) {
         String clientIp = getClientIp(request);
 
-        // 速率限制检查：每个 IP 每分钟最多 5 次登录尝试（独立于注册限制）
         if (recordAndCheckRateLimit(LOGIN_RATE_LIMIT, MAX_LOGIN_PER_MINUTE, clientIp)) {
             log.warn("登录速率限制触发: IP={}, username={}", clientIp, loginRequest.getUsername());
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
@@ -133,26 +131,23 @@ public class UserController {
 
         log.debug("收到登录请求: username={}", loginRequest.getUsername());
 
-        // 1. 根据用户名查询用户
         User user = userMapper.findByUsername(loginRequest.getUsername());
 
-        // 2. 验证密码（统一错误消息，防止用户枚举攻击）
         if (user == null || !PasswordUtil.matches(loginRequest.getPassword(), user.getPassword())) {
             log.info("登录失败: username={}", loginRequest.getUsername());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.fail("用户名或密码错误"));
         }
 
-        // 3. 生成 JWT token（嵌入 userId 避免后续请求查库）
         String token = JwtUtil.generateToken(user.getId(), user.getUsername());
 
         log.info("登录成功: username={}", user.getUsername());
 
-        // 4. 返回结果
         Map<String, Object> data = new HashMap<>();
         data.put("token", token);
         data.put("username", user.getUsername());
         data.put("userId", user.getId());
+        data.put("expiresIn", JwtUtil.EXPIRATION_MS / 1000);
         return ResponseEntity.ok(ApiResponse.success("登录成功", data));
     }
 
@@ -177,7 +172,7 @@ public class UserController {
     }
 
     /**
-     * 获取客户端真实 IP（考虑代理）
+     * 获取客户端真实 IP（考虑反向代理）
      */
     private String getClientIp(HttpServletRequest request) {
         String ip = request.getHeader("X-Forwarded-For");
@@ -187,7 +182,6 @@ public class UserController {
         if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getRemoteAddr();
         }
-        // X-Forwarded-For 可能包含多个 IP，取第一个
         if (ip != null && ip.contains(",")) {
             ip = ip.split(",")[0].trim();
         }
