@@ -39,3 +39,6 @@ application-local.properties
 ### AI tooling (never commit) ###
 .kilo/
 .kilocode/
+
+### DevTools local config (never commit) ###
+spring-devtools.properties
