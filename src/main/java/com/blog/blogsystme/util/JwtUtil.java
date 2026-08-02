@@ -48,20 +48,25 @@ public class JwtUtil {
         return null;
     }
 
-    public static String generateAccessToken(Integer userId, String username) {
-        return generateToken(userId, username, ACCESS_EXPIRATION_MS);
+    public static String generateRefreshToken(Integer userId, String username, int tokenVersion) {
+        return generateToken(userId, username, REFRESH_EXPIRATION_MS, tokenVersion);
     }
 
-    public static String generateRefreshToken(Integer userId, String username) {
-        return generateToken(userId, username, REFRESH_EXPIRATION_MS);
+    public static String generateAccessToken(Integer userId, String username) {
+        return generateToken(userId, username, ACCESS_EXPIRATION_MS, 0);
     }
 
     private static String generateToken(Integer userId, String username, long expirationMs) {
+        return generateToken(userId, username, expirationMs, 0);
+    }
+
+    private static String generateToken(Integer userId, String username, long expirationMs, int tokenVersion) {
         Date now = new Date();
         Date expiration = new Date(now.getTime() + expirationMs);
         return Jwts.builder()
                 .subject(username)
                 .claim("userId", userId)
+                .claim("tokenVersion", tokenVersion)
                 .issuedAt(now)
                 .expiration(expiration)
                 .signWith(KEY, Jwts.SIG.HS256)
@@ -83,6 +88,16 @@ public class JwtUtil {
             return userId instanceof Integer ? (Integer) userId : null;
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    public static Integer getTokenVersionFromToken(String token) {
+        try {
+            Claims claims = parseToken(token);
+            Object version = claims.get("tokenVersion");
+            return version instanceof Integer ? (Integer) version : 0;
+        } catch (Exception e) {
+            return 0;
         }
     }
 

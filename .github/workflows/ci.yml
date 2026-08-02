@@ -13,7 +13,7 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: test123
+          MYSQL_ROOT_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
           MYSQL_DATABASE: blog_db
         ports:
           - 3306:3306
@@ -31,6 +31,6 @@ jobs:
         run: ./mvnw package -DskipTests
         env:
           DB_USERNAME: root
-          DB_PASSWORD: test123
-          JWT_SECRET: dGVzdC1zZWNyZXQta2V5LWZvci1jaS1vbmx5LW5vdC11c2VkLWluLXByb2R1Y3Rpb24K
-          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/blog_db?useSSL=false&allowPublicKeyRetrieval=true
+          DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+          JWT_SECRET: ${{ secrets.CI_JWT_SECRET }}
+          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/blog_db?useSSL=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8

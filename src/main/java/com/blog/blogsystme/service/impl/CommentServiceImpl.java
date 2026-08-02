@@ -15,6 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.stream.Collectors;
 
 @Service
 public class CommentServiceImpl implements CommentService {
@@ -80,10 +83,17 @@ public class CommentServiceImpl implements CommentService {
     }
 
     private void populateUsernames(List<Comment> comments) {
+        if (comments.isEmpty()) return;
+        List<Integer> userIds = comments.stream()
+                .map(Comment::getUserId)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Integer, String> userMap = userMapper.findByIds(userIds).stream()
+                .collect(Collectors.toMap(User::getId, User::getUsername, (a, b) -> a));
         for (Comment comment : comments) {
-            User user = userMapper.findById(comment.getUserId());
-            if (user != null) {
-                comment.setUsername(user.getUsername());
+            String username = userMap.get(comment.getUserId());
+            if (username != null) {
+                comment.setUsername(username);
             }
         }
     }

@@ -23,6 +23,16 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**
+     * 认证异常（拦截器抛出，替代裸写 JSON）
+     */
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuthentication(AuthenticationException e) {
+        log.warn("认证失败: {}", e.getMessage());
+        return ResponseEntity.status(e.getStatus())
+                .body(ApiResponse.fail(e.getMessage()));
+    }
+
+    /**
      * 请求参数校验失败（@Valid）
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)

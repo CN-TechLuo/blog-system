@@ -21,10 +21,6 @@ public interface ArticleMapper {
     @Select("SELECT * FROM article WHERE id = #{id}")
     Article findById(Integer id);
 
-    @Deprecated
-    @Select("SELECT * FROM article ORDER BY create_time DESC LIMIT 100")
-    List<Article> findAll();
-
     @Update("UPDATE article SET title = #{title}, content = #{content} WHERE id = #{id} AND user_id = #{userId}")
     int updateByAuthor(Article article);
 

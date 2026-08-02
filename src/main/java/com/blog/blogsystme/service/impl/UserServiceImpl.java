@@ -104,7 +104,7 @@ public class UserServiceImpl implements UserService {
         }
 
         String accessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername());
-        String refreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername());
+        String refreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), user.getTokenVersion() != null ? user.getTokenVersion() : 0);
 
         log.info("登录成功: username={}", user.getUsername());
 
@@ -133,8 +133,16 @@ public class UserServiceImpl implements UserService {
             return ApiResponse.fail("用户不存在");
         }
 
+        int tokenVersionInToken = JwtUtil.getTokenVersionFromToken(request.getRefreshToken());
+        int currentVersion = user.getTokenVersion() != null ? user.getTokenVersion() : 0;
+        if (tokenVersionInToken != currentVersion) {
+            log.warn("Refresh token 版本不匹配，已被失效: userId={}, tokenVersion={}, currentVersion={}",
+                    userId, tokenVersionInToken, currentVersion);
+            return ApiResponse.fail("refreshToken 已失效，请重新登录");
+        }
+
         String newAccessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername());
-        String newRefreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername());
+        String newRefreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), currentVersion);
 
         RefreshTokenResponse data = new RefreshTokenResponse();
         data.setToken(newAccessToken);
@@ -173,7 +181,8 @@ public class UserServiceImpl implements UserService {
 
         String newEncoded = PasswordUtil.encode(request.getNewPassword());
         userMapper.updatePassword(userId, newEncoded);
-        log.info("密码修改成功: userId={}", userId);
+        userMapper.incrementTokenVersion(userId);
+        log.info("密码修改成功，已失效所有 refresh token: userId={}", userId);
         return ApiResponse.success("密码修改成功");
     }
 

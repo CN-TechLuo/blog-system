@@ -42,3 +42,16 @@ application-local.properties
 
 ### DevTools local config (never commit) ###
 spring-devtools.properties
+
+### Security: never commit credentials, keys, or dumps ###
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+*.hprof
+*.log
+*.pid
+/data/
+/temp/
+/tmp/
