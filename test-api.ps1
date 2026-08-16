@@ -2,6 +2,8 @@
 # 博客系统 API 测试脚本 (PowerShell)
 # 用法: powershell -ExecutionPolicy Bypass -File test-api.ps1
 # 前提: 后端已启动在 http://localhost:8080
+# 注意: 本脚本仅用于本地冒烟测试，内置密码（如 Test1234）均为测试夹具，
+#       请勿在共享环境运行，也请勿向本脚本写入真实账号/密码/令牌。
 # ============================================================
 
 $BASE_URL = "http://localhost:8080"

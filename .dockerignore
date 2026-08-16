@@ -1,0 +1,15 @@
+target/
+uploads/
+.idea/
+*.iml
+.kilo/
+.kilocode/
+.vscode/
+.git/
+.gitignore
+Dockerfile
+*.md
+*.log
+src/test/
+application-local.properties
+spring-devtools.properties

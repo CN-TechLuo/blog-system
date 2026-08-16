@@ -51,7 +51,18 @@ spring-devtools.properties
 *.jks
 *.hprof
 *.log
+*.log.gz
 *.pid
 /data/
 /temp/
 /tmp/
+/backup/
+
+### Uploaded files (never commit) ###
+/uploads/
+
+### Local runtime logs (never commit) ###
+/logs/
+
+### Local dev scripts (never commit) ###
+zombie-watch.ps1
