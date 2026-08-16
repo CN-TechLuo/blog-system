@@ -11,8 +11,9 @@ import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
  * JWT 认证拦截器，统一提取当前用户 ID 并存入 request attribute。
- * 拦截所有 /api/article/** 非 GET 请求（POST/PUT/DELETE），
- * GET 请求（列表、详情）在 preHandle 中直接放行。
+ * - 非 GET 的受保护路径：必须携带有效 token，否则拒绝
+ * - /api/article/** 的 GET 请求：公开放行；若携带有效 token 则解析出
+ *   userId 存入 request attribute（用于点赞/收藏状态回显），无效则忽略
  */
 @Component
 public class AuthInterceptor implements HandlerInterceptor {
@@ -25,7 +26,18 @@ public class AuthInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        if (request.getRequestURI().startsWith("/api/article/") && "GET".equalsIgnoreCase(request.getMethod())) {
+        // 关注流必须登录（其余文章 GET 接口公开）
+        boolean protectedFeed = "/api/article/feed/following".equals(request.getRequestURI());
+
+        if (request.getRequestURI().startsWith("/api/article/") && "GET".equalsIgnoreCase(request.getMethod())
+                && !protectedFeed) {
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                Integer viewerId = JwtUtil.getUserIdFromToken(authHeader.substring(7));
+                if (viewerId != null) {
+                    request.setAttribute("userId", viewerId);
+                }
+            }
             return true;
         }
 

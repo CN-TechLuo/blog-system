@@ -11,18 +11,14 @@ import com.blog.blogsystme.entity.User;
 import com.blog.blogsystme.mapper.UserMapper;
 import com.blog.blogsystme.service.UserService;
 import com.blog.blogsystme.util.JwtUtil;
+import com.blog.blogsystme.util.MaskUtil;
 import com.blog.blogsystme.util.PasswordUtil;
+import com.blog.blogsystme.util.RateLimiterUtil;
+import com.blog.blogsystme.util.XssUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -31,26 +27,12 @@ public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
 
-    private record RateWindow(long startMs, long count) {}
-
-    private static final ConcurrentHashMap<String, RateWindow> LOGIN_RATE_LIMIT = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, RateWindow> REGISTER_RATE_LIMIT = new ConcurrentHashMap<>();
+    /** 登录限流：单账号 5 次/分钟，单 IP 30 次/分钟（缓解反代共享 IP 误伤） */
     private static final int MAX_LOGIN_PER_MINUTE = 5;
+    private static final int MAX_LOGIN_PER_IP_MINUTE = 30;
+    /** 注册限流：单账号名 3 次/分钟，单 IP 20 次/分钟 */
     private static final int MAX_REGISTER_PER_MINUTE = 3;
-    private static final long RATE_LIMIT_WINDOW_MS = 60_000L;
-
-    static {
-        ScheduledExecutorService cleaner = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "rate-limit-cleaner");
-            t.setDaemon(true);
-            return t;
-        });
-        cleaner.scheduleAtFixedRate(() -> {
-            long now = System.currentTimeMillis();
-            LOGIN_RATE_LIMIT.entrySet().removeIf(e -> now - e.getValue().startMs() > RATE_LIMIT_WINDOW_MS);
-            REGISTER_RATE_LIMIT.entrySet().removeIf(e -> now - e.getValue().startMs() > RATE_LIMIT_WINDOW_MS);
-        }, 60, 60, TimeUnit.SECONDS);
-    }
+    private static final int MAX_REGISTER_PER_IP_MINUTE = 20;
 
     public UserServiceImpl(UserMapper userMapper) {
         this.userMapper = userMapper;
@@ -59,7 +41,8 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public ApiResponse<Object> register(RegisterRequest request, String clientIp) {
-        if (checkRateLimit(REGISTER_RATE_LIMIT, MAX_REGISTER_PER_MINUTE, clientIp)) {
+        if (RateLimiterUtil.isBlocked("reg:ip:" + clientIp, MAX_REGISTER_PER_IP_MINUTE)
+                || RateLimiterUtil.isBlocked("reg:acc:" + clientIp + ":" + request.getUsername(), MAX_REGISTER_PER_MINUTE)) {
             log.warn("注册速率限制触发: IP={}, username={}", clientIp, request.getUsername());
             return ApiResponse.fail("注册请求过于频繁，请稍后重试");
         }
@@ -76,8 +59,13 @@ public class UserServiceImpl implements UserService {
 
         User user = new User();
         user.setUsername(request.getUsername());
+        user.setNickname(request.getNickname() != null && !request.getNickname().isBlank()
+                ? XssUtil.escape(request.getNickname().trim()) : null);
         user.setPassword(encodedPassword);
-        user.setEmail(request.getEmail());
+        user.setEmail(request.getEmail() != null && !request.getEmail().isBlank()
+                ? request.getEmail().trim() : null);
+        user.setPhone(request.getPhone() != null && !request.getPhone().isBlank()
+                ? request.getPhone().trim() : null);
         int rows = userMapper.insert(user);
 
         log.info("注册结果: username={}, rows={}", request.getUsername(), rows);
@@ -90,14 +78,20 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public ApiResponse<RefreshTokenResponse> login(LoginRequest request, String clientIp) {
-        if (checkRateLimit(LOGIN_RATE_LIMIT, MAX_LOGIN_PER_MINUTE, clientIp)) {
+        if (RateLimiterUtil.isBlocked("login:ip:" + clientIp, MAX_LOGIN_PER_IP_MINUTE)
+                || RateLimiterUtil.isBlocked("login:acc:" + clientIp + ":" + request.getUsername(), MAX_LOGIN_PER_MINUTE)) {
             log.warn("登录速率限制触发: IP={}, username={}", clientIp, request.getUsername());
             return ApiResponse.fail("登录请求过于频繁，请稍后重试");
         }
 
         log.debug("收到登录请求: username={}", request.getUsername());
 
-        User user = userMapper.findByUsername(request.getUsername());
+        User user;
+        if (request.getUsername() != null && request.getUsername().matches("\\d{11}")) {
+            user = userMapper.findByPhone(request.getUsername());
+        } else {
+            user = userMapper.findByUsername(request.getUsername());
+        }
         if (user == null || !PasswordUtil.matches(request.getPassword(), user.getPassword())) {
             log.info("登录失败: username={}", request.getUsername());
             return ApiResponse.fail("用户名或密码错误");
@@ -162,7 +156,11 @@ public class UserServiceImpl implements UserService {
         UserInfoResponse info = new UserInfoResponse();
         info.setId(user.getId());
         info.setUsername(user.getUsername());
-        info.setEmail(user.getEmail());
+        info.setNickname(user.getNickname());
+        info.setEmail(MaskUtil.maskEmail(user.getEmail()));
+        info.setPhone(MaskUtil.maskPhone(user.getPhone()));
+        info.setRole(user.getRole());
+        info.setAvatarUrl(user.getAvatarUrl());
         info.setCreateTime(user.getCreateTime());
         return ApiResponse.success("查询成功", info);
     }
@@ -184,18 +182,6 @@ public class UserServiceImpl implements UserService {
         userMapper.incrementTokenVersion(userId);
         log.info("密码修改成功，已失效所有 refresh token: userId={}", userId);
         return ApiResponse.success("密码修改成功");
-    }
-
-    private boolean checkRateLimit(ConcurrentHashMap<String, RateWindow> rateMap,
-                                   int maxAttempts, String ip) {
-        long now = System.currentTimeMillis();
-        RateWindow window = rateMap.compute(ip, (key, val) -> {
-            if (val == null || now - val.startMs() > RATE_LIMIT_WINDOW_MS) {
-                return new RateWindow(now, 1);
-            }
-            return new RateWindow(val.startMs(), val.count() + 1);
-        });
-        return window.count() > maxAttempts;
     }
 
 }

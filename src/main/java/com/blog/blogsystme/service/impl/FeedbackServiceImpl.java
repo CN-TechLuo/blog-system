@@ -6,6 +6,7 @@ import com.blog.blogsystme.dto.PageResponse;
 import com.blog.blogsystme.entity.Feedback;
 import com.blog.blogsystme.mapper.FeedbackMapper;
 import com.blog.blogsystme.service.FeedbackService;
+import com.blog.blogsystme.util.PageUtil;
 import com.blog.blogsystme.util.XssUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,14 +44,12 @@ public class FeedbackServiceImpl implements FeedbackService {
 
     @Override
     public ApiResponse<PageResponse> list(Integer userId, int page, int pageSize) {
-        if (page < 1) page = 1;
-        if (pageSize < 1) pageSize = 10;
-        if (pageSize > 50) pageSize = 50;
-
-        int start = (page - 1) * pageSize;
-        List<Feedback> list = feedbackMapper.findByUserId(userId, start, pageSize);
+        int p = PageUtil.page(page);
+        int size = PageUtil.pageSize(pageSize, 50);
+        int start = PageUtil.start(p, size);
+        List<Feedback> list = feedbackMapper.findByUserId(userId, start, size);
         int total = feedbackMapper.countByUserId(userId);
-        return ApiResponse.success("查询成功", new PageResponse(list, total, pageSize, page));
+        return ApiResponse.success("查询成功", new PageResponse(list, total, size, p));
     }
 
     @Override

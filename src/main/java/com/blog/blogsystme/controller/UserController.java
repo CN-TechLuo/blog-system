@@ -5,9 +5,15 @@ import com.blog.blogsystme.dto.ChangePasswordRequest;
 import com.blog.blogsystme.dto.LoginRequest;
 import com.blog.blogsystme.dto.RefreshTokenRequest;
 import com.blog.blogsystme.dto.RefreshTokenResponse;
+import com.blog.blogsystme.dto.NicknameRequest;
+import com.blog.blogsystme.dto.PhoneRequest;
 import com.blog.blogsystme.dto.RegisterRequest;
 import com.blog.blogsystme.dto.UserInfoResponse;
+import com.blog.blogsystme.entity.User;
+import com.blog.blogsystme.mapper.UserMapper;
 import com.blog.blogsystme.service.UserService;
+import com.blog.blogsystme.util.ImageUtil;
+import com.blog.blogsystme.util.XssUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,17 +29,25 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.Base64;
+import java.util.Map;
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/api/user")
-@Tag(name = "用户管理", description = "注册、登录、token 刷新、个人信息")
+@Tag(name = "用户管理", description = "注册、登录、个人信息")
 public class UserController {
 
     private static final Logger log = LoggerFactory.getLogger(UserController.class);
 
     private final UserService userService;
+    private final UserMapper userMapper;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, UserMapper userMapper) {
         this.userService = userService;
+        this.userMapper = userMapper;
     }
 
     @PostMapping("/register")
@@ -76,18 +90,77 @@ public class UserController {
         return ResponseEntity.status(result.isSuccess() ? 200 : 400).body(result);
     }
 
+    @PostMapping("/avatar")
+    @Operation(summary = "上传头像 (Base64)")
+    public ResponseEntity<ApiResponse<String>> uploadAvatar(@RequestAttribute("userId") Integer userId,
+                                                             @RequestBody Map<String, String> body) {
+        String base64 = body.get("image");
+        if (base64 == null || base64.isBlank()) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("请提供图片数据"));
+        }
+        if (base64.contains(",")) {
+            base64 = base64.substring(base64.indexOf(",") + 1);
+        }
+        byte[] imageBytes;
+        try {
+            imageBytes = Base64.getDecoder().decode(base64);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("图片数据格式错误"));
+        }
+        if (imageBytes.length > 2 * 1024 * 1024) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("图片不能超过 2MB"));
+        }
+
+        try {
+            String ext = ImageUtil.detectImageType(imageBytes);
+            if (ext == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.fail("不支持的图片格式，仅支持 JPG/PNG/GIF/WEBP"));
+            }
+            // 服务端重编码，剥离 polyglot 载荷
+            imageBytes = ImageUtil.sanitizeImage(imageBytes, ext);
+            File dir = new File("uploads");
+            if (!dir.exists()) {
+                boolean created = dir.mkdirs();
+                if (!created) {
+                    throw new IOException("无法创建上传目录: " + dir.getAbsolutePath());
+                }
+            }
+            String filename = "avatar_" + userId + "_" + UUID.randomUUID().toString().substring(0, 8) + "." + ext;
+            File dest = new File(dir, filename);
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(dest)) {
+                fos.write(imageBytes);
+            }
+            String avatarUrl = "/uploads/" + filename;
+            userMapper.updateAvatar(userId, avatarUrl);
+            return ResponseEntity.ok(ApiResponse.success("头像上传成功", avatarUrl));
+        } catch (Exception e) {
+            log.error("头像上传失败", e);
+            return ResponseEntity.internalServerError().body(ApiResponse.fail("上传失败"));
+        }
+    }
+
+    @PutMapping("/nickname")
+    @Operation(summary = "修改昵称")
+    public ResponseEntity<ApiResponse<Void>> updateNickname(@RequestAttribute("userId") Integer userId,
+                                                             @Valid @RequestBody NicknameRequest request) {
+        userMapper.updateNickname(userId, XssUtil.escape(request.getNickname().trim()));
+        return ResponseEntity.ok(ApiResponse.success("昵称修改成功"));
+    }
+
+    @PutMapping("/phone")
+    @Operation(summary = "绑定手机号")
+    public ResponseEntity<ApiResponse<Void>> bindPhone(@RequestAttribute("userId") Integer userId,
+                                                        @Valid @RequestBody PhoneRequest request) {
+        User existing = userMapper.findByPhone(request.getPhone());
+        if (existing != null && !existing.getId().equals(userId)) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("该手机号已被其他用户绑定"));
+        }
+        userMapper.updatePhone(userId, request.getPhone());
+        return ResponseEntity.ok(ApiResponse.success("手机号绑定成功"));
+    }
+
     private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
+        return request.getRemoteAddr();
     }
 
 }

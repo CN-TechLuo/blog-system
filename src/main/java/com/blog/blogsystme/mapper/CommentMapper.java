@@ -28,7 +28,19 @@ public interface CommentMapper {
     @Select("SELECT * FROM comment WHERE id = #{id}")
     Comment findById(@Param("id") Integer id);
 
+    @Select("SELECT * FROM comment WHERE id = #{id} AND user_id = #{userId}")
+    Comment findByIdAndUser(@Param("id") Integer id, @Param("userId") Integer userId);
+
     @Delete("DELETE FROM comment WHERE id = #{id} AND user_id = #{userId}")
     int deleteByIdAndUser(@Param("id") Integer id, @Param("userId") Integer userId);
+
+    @Delete("DELETE FROM comment WHERE user_id = #{userId}")
+    int deleteByUserId(@Param("userId") Integer userId);
+
+    @Delete("DELETE FROM comment WHERE article_id = #{articleId}")
+    int deleteByArticleId(@Param("articleId") Integer articleId);
+
+    @Select("SELECT COUNT(*) FROM comment")
+    int countAll();
 
 }

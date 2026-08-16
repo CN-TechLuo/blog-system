@@ -43,28 +43,33 @@ public class ArticleController {
     public ResponseEntity<ApiResponse<Long>> create(@Valid @RequestBody ArticleCreateRequest request,
                                                     @RequestAttribute("userId") Integer userId) {
         ApiResponse<Long> result = articleService.create(request, userId);
-        return ResponseEntity.status(result.isSuccess() ? 200 : 500).body(result);
+        return ResponseEntity.status(result.isSuccess() ? 200 : 400).body(result);
     }
 
     @GetMapping("/list")
     @Operation(summary = "文章列表（分页）")
-    public ResponseEntity<ApiResponse<PageResponse>> list(@RequestParam(defaultValue = "1") int page,
+    public ResponseEntity<ApiResponse<PageResponse>> list(HttpServletRequest request,
+                                                          @RequestParam(defaultValue = "1") int page,
                                                           @RequestParam(defaultValue = "10") int pageSize) {
-        return ResponseEntity.ok(articleService.list(page, pageSize));
+        Integer viewerId = (Integer) request.getAttribute("userId");
+        return ResponseEntity.ok(articleService.list(page, pageSize, viewerId));
     }
 
     @GetMapping("/search")
     @Operation(summary = "文章搜索（按标题）")
-    public ResponseEntity<ApiResponse<PageResponse>> search(@RequestParam String keyword,
+    public ResponseEntity<ApiResponse<PageResponse>> search(HttpServletRequest request,
+                                                            @RequestParam String keyword,
                                                             @RequestParam(defaultValue = "1") int page,
                                                             @RequestParam(defaultValue = "10") int pageSize) {
-        return ResponseEntity.ok(articleService.search(keyword, page, pageSize));
+        Integer viewerId = (Integer) request.getAttribute("userId");
+        return ResponseEntity.ok(articleService.search(keyword, page, pageSize, viewerId));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "文章详情")
-    public ResponseEntity<ApiResponse<Article>> detail(@PathVariable Integer id) {
-        ApiResponse<Article> result = articleService.detail(id);
+    public ResponseEntity<ApiResponse<Article>> detail(HttpServletRequest request, @PathVariable Integer id) {
+        Integer viewerId = (Integer) request.getAttribute("userId");
+        ApiResponse<Article> result = articleService.detail(id, viewerId, request.getRemoteAddr());
         if (!result.isSuccess()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(result);
         }
@@ -85,6 +90,28 @@ public class ArticleController {
                                                     @RequestAttribute("userId") Integer userId) {
         ApiResponse<Void> result = articleService.delete(id, userId);
         return ResponseEntity.status(result.isSuccess() ? 200 : 403).body(result);
+    }
+
+    @GetMapping("/feed/following")
+    @Operation(summary = "关注流（需登录）")
+    public ResponseEntity<ApiResponse<PageResponse>> followingFeed(HttpServletRequest request,
+                                                                    @RequestParam(defaultValue = "1") int page,
+                                                                    @RequestParam(defaultValue = "10") int pageSize) {
+        Integer userId = (Integer) request.getAttribute("userId");
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.fail("请先登录"));
+        }
+        return ResponseEntity.ok(articleService.followingFeed(userId, page, pageSize));
+    }
+
+    @GetMapping("/feed/hot")
+    @Operation(summary = "热门流（公开）")
+    public ResponseEntity<ApiResponse<PageResponse>> hotFeed(HttpServletRequest request,
+                                                              @RequestParam(defaultValue = "1") int page,
+                                                              @RequestParam(defaultValue = "10") int pageSize) {
+        Integer viewerId = (Integer) request.getAttribute("userId");
+        return ResponseEntity.ok(articleService.hotFeed(page, pageSize, viewerId));
     }
 
 }
