@@ -2,7 +2,7 @@
 # 博客系统数据库 + 上传目录备份脚本
 # 用法: powershell -ExecutionPolicy Bypass -File ops\backup-db.ps1
 # 定时任务(Windows): schtasks /Create /TN BlogBackup /SC DAILY /ST 03:00
-#   /TR "powershell -ExecutionPolicy Bypass -File D:\IDE\xiangmu\blog-systme\ops\backup-db.ps1"
+#   /TR "powershell -ExecutionPolicy Bypass -File D:\IDE\xiangmu\blog-system\ops\backup-db.ps1"
 # ============================================================
 
 $ErrorActionPreference = "Stop"
