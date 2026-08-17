@@ -40,8 +40,8 @@ class JwtUtilTest {
     }
 
     @Test
-    void accessTokenShouldExpireInTwoHours() {
-        assertTrue(JwtUtil.ACCESS_EXPIRATION_MS == 2 * 60 * 60 * 1000L);
+    void accessTokenShouldExpireInThirtyMinutes() {
+        assertTrue(JwtUtil.ACCESS_EXPIRATION_MS == 30 * 60 * 1000L);
     }
 
 }

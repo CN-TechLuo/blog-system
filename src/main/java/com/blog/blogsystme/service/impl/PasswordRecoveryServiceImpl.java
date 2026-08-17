@@ -8,6 +8,7 @@ import com.blog.blogsystme.entity.User;
 import com.blog.blogsystme.mapper.PasswordResetTokenMapper;
 import com.blog.blogsystme.mapper.UserMapper;
 import com.blog.blogsystme.service.PasswordRecoveryService;
+import com.blog.blogsystme.util.AuditLogger;
 import com.blog.blogsystme.util.MaskUtil;
 import com.blog.blogsystme.util.PasswordUtil;
 import org.slf4j.Logger;
@@ -106,6 +107,7 @@ public class PasswordRecoveryServiceImpl implements PasswordRecoveryService {
         entity.setTokenHash(tokenHash);
         entity.setExpiresAt(LocalDateTime.now().plusMinutes(TOKEN_EXPIRE_MINUTES));
         tokenMapper.insert(entity);
+        AuditLogger.log("RESET_REQUESTED", "userId=" + user.getId() + ", account=" + account);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("expiresInMinutes", TOKEN_EXPIRE_MINUTES);
@@ -173,6 +175,7 @@ public class PasswordRecoveryServiceImpl implements PasswordRecoveryService {
         tokenMapper.markUsed(token.getId());
         tokenMapper.invalidateAllForUser(user.getId());
 
+        AuditLogger.log("RESET_COMPLETED", "userId=" + user.getId());
         log.info("密码重置成功: userId={}", user.getId());
         return ApiResponse.success("密码重置成功，请使用新密码登录");
     }
