@@ -1,4 +1,4 @@
-# 智能博客系统 (blog-systme)
+# 智能博客系统 (blog-system)
 
 基于 Spring Boot 4.1 + MyBatis + MySQL 8 + Vue 3 的企业级博客平台，集成 DeepSeek AI 助手、社交互动、评论通知、管理后台等功能。
 
@@ -68,7 +68,7 @@ cd ../blog-frontend && npm install && npm run dev
 
 ```bash
 # 构建镜像
-docker build -t blog-systme:latest .
+docker build -t blog-system:latest .
 
 # 运行（注意挂载 uploads 卷持久化上传文件）
 docker run -d --name blog \
@@ -80,7 +80,7 @@ docker run -d --name blog \
   -e DEEPSEEK_API_KEY=sk-xxx \
   -e CORS_ORIGINS=https://你的前端域名 \
   -v blog-uploads:/app/uploads \
-  blog-systme:latest
+  blog-system:latest
 ```
 
 镜像内置：`SPRING_PROFILES_ACTIVE=prod`（自动关闭 Swagger）、`TZ=Asia/Shanghai`、健康检查、非 root 运行。
