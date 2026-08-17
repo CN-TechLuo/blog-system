@@ -12,7 +12,9 @@ public class PasswordUtil {
         "^(?=.*[a-zA-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?`~]).+$";
 
     // 创建一个 BCryptPasswordEncoder 对象（单例，避免重复创建）
-    private static final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    // cost=12：企业级推荐强度，约为默认 cost=10 的 4 倍计算量；
+    // matches() 会读取密文中自带的 cost 因子，旧密文（cost=10）仍可正常校验。
+    private static final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder(12);
 
     /**
      * 加密原始密码

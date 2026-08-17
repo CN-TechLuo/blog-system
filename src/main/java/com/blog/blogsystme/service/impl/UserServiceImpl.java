@@ -10,6 +10,7 @@ import com.blog.blogsystme.dto.UserInfoResponse;
 import com.blog.blogsystme.entity.User;
 import com.blog.blogsystme.mapper.UserMapper;
 import com.blog.blogsystme.service.UserService;
+import com.blog.blogsystme.util.AuditLogger;
 import com.blog.blogsystme.util.JwtUtil;
 import com.blog.blogsystme.util.MaskUtil;
 import com.blog.blogsystme.util.PasswordUtil;
@@ -19,6 +20,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -33,6 +36,14 @@ public class UserServiceImpl implements UserService {
     /** 注册限流：单账号名 3 次/分钟，单 IP 20 次/分钟 */
     private static final int MAX_REGISTER_PER_MINUTE = 3;
     private static final int MAX_REGISTER_PER_IP_MINUTE = 20;
+
+    /** 登录失败锁定：连续失败 5 次锁定 15 分钟（内存实现，重启后重置） */
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final long LOCK_DURATION_MS = 15 * 60 * 1000L;
+    /** 失败计数窗口：30 分钟内无新失败则清零 */
+    private static final long FAIL_WINDOW_MS = 30 * 60 * 1000L;
+    /** key=ip:account -> [failCount, lockUntil, lastFailAt] */
+    private static final ConcurrentHashMap<String, long[]> FAILED_LOGINS = new ConcurrentHashMap<>();
 
     public UserServiceImpl(UserMapper userMapper) {
         this.userMapper = userMapper;
@@ -84,6 +95,14 @@ public class UserServiceImpl implements UserService {
             return ApiResponse.fail("登录请求过于频繁，请稍后重试");
         }
 
+        String lockKey = clientIp + ":" + request.getUsername();
+        long[] record = FAILED_LOGINS.get(lockKey);
+        if (record != null && record[1] > System.currentTimeMillis()) {
+            long remainMin = Math.max(1, (record[1] - System.currentTimeMillis()) / 60000 + 1);
+            AuditLogger.log("LOGIN_LOCKED", "ip=" + clientIp + ", username=" + request.getUsername());
+            return ApiResponse.fail("连续失败次数过多，账号已锁定，请 " + remainMin + " 分钟后再试");
+        }
+
         log.debug("收到登录请求: username={}", request.getUsername());
 
         User user;
@@ -93,13 +112,37 @@ public class UserServiceImpl implements UserService {
             user = userMapper.findByUsername(request.getUsername());
         }
         if (user == null || !PasswordUtil.matches(request.getPassword(), user.getPassword())) {
+            long[] rec = FAILED_LOGINS.compute(lockKey, (k, v) -> {
+                long now = System.currentTimeMillis();
+                if (v == null) return new long[]{1, 0, now};
+                if (v[1] > 0) {
+                    // 锁定期内继续失败：计数保留
+                    if (v[1] < now) return new long[]{1, 0, now}; // 锁定期满，重新计数
+                    return new long[]{v[0] + 1, v[1], now};
+                }
+                // 未锁定：超过失败窗口则重新计数，否则累加
+                if (now - v[2] > FAIL_WINDOW_MS) return new long[]{1, 0, now};
+                return new long[]{v[0] + 1, 0, now};
+            });
+            String msg = "用户名或密码错误";
+            if (rec[0] >= MAX_FAILED_ATTEMPTS) {
+                rec[1] = System.currentTimeMillis() + LOCK_DURATION_MS;
+                msg = "连续失败次数过多，账号已锁定 15 分钟";
+                AuditLogger.log("ACCOUNT_LOCKED", "ip=" + clientIp + ", username=" + request.getUsername());
+            }
+            AuditLogger.log("LOGIN_FAIL", "ip=" + clientIp + ", username=" + request.getUsername()
+                    + ", failCount=" + rec[0]);
             log.info("登录失败: username={}", request.getUsername());
-            return ApiResponse.fail("用户名或密码错误");
+            return ApiResponse.fail(msg);
         }
+
+        FAILED_LOGINS.remove(lockKey);
 
         String accessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername());
         String refreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), user.getTokenVersion() != null ? user.getTokenVersion() : 0);
 
+        AuditLogger.log("LOGIN_SUCCESS", "userId=" + user.getId() + ", username=" + user.getUsername()
+                + ", ip=" + clientIp);
         log.info("登录成功: username={}", user.getUsername());
 
         RefreshTokenResponse data = new RefreshTokenResponse();
@@ -132,11 +175,15 @@ public class UserServiceImpl implements UserService {
         if (tokenVersionInToken != currentVersion) {
             log.warn("Refresh token 版本不匹配，已被失效: userId={}, tokenVersion={}, currentVersion={}",
                     userId, tokenVersionInToken, currentVersion);
+            AuditLogger.log("REFRESH_REJECT", "userId=" + userId + ", reason=token_version_mismatch");
             return ApiResponse.fail("refreshToken 已失效，请重新登录");
         }
 
+        // 旋转刷新：每次刷新递增 tokenVersion，旧 refresh token 立即失效（防重放）
+        int newVersion = currentVersion + 1;
+        userMapper.incrementTokenVersion(userId);
         String newAccessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername());
-        String newRefreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), currentVersion);
+        String newRefreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), newVersion);
 
         RefreshTokenResponse data = new RefreshTokenResponse();
         data.setToken(newAccessToken);
@@ -180,6 +227,7 @@ public class UserServiceImpl implements UserService {
         String newEncoded = PasswordUtil.encode(request.getNewPassword());
         userMapper.updatePassword(userId, newEncoded);
         userMapper.incrementTokenVersion(userId);
+        AuditLogger.log("PASSWORD_CHANGED", "userId=" + userId);
         log.info("密码修改成功，已失效所有 refresh token: userId={}", userId);
         return ApiResponse.success("密码修改成功");
     }

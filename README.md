@@ -123,8 +123,11 @@ src/main/resources/db/
 
 ## 安全特性
 
-- JWT 双 Token + 改密失效（token_version）
-- BCrypt 密码 + 复杂度校验 + 登录/注册限流
+完整安全体系见 **[SECURITY.md](SECURITY.md)**（16 级纵深防御），核心摘要：
+
+- JWT 双 Token（30 分钟 Access + 7 天 Refresh）+ issuer/audience 校验 + Refresh 旋转
+- BCrypt cost=12 + 密码复杂度校验 + 登录限流 + 连续失败锁定
 - 全链路 XSS 过滤（标题/内容/评论/昵称）+ DOMPurify 前端消毒
 - 管理员 RBAC + 级联删除 + 最后管理员保护
-- 手机/邮箱脱敏、安全响应头、CORS 白名单
+- 手机/邮箱脱敏、CSP/HSTS 安全响应头、CORS 白名单、全局限流
+- 独立安全审计日志（logs/audit.log）

@@ -17,8 +17,14 @@ public class JwtUtil {
     private static volatile String SECRET;
     private static volatile SecretKey KEY;
 
-    /** Access Token 有效期：2 小时 */
-    public static final long ACCESS_EXPIRATION_MS = 2 * 60 * 60 * 1000L;
+    /** JWT 签发者标识：解析时强校验，防止跨应用令牌混用 */
+    public static final String ISSUER = "blog-system";
+
+    /** JWT 受众标识：解析时强校验 */
+    public static final String AUDIENCE = "blog-web";
+
+    /** Access Token 有效期：30 分钟（企业级建议 15-30 分钟，缩短泄露窗口） */
+    public static final long ACCESS_EXPIRATION_MS = 30 * 60 * 1000L;
 
     /** Refresh Token 有效期：7 天 */
     public static final long REFRESH_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000L;
@@ -35,9 +41,21 @@ public class JwtUtil {
             throw new IllegalStateException(
                     "JWT_SECRET 环境变量或 -Djwt.secret 系统属性必须配置。生成命令: openssl rand -base64 32");
         }
+        byte[] keyBytes;
+        try {
+            keyBytes = Base64.getDecoder().decode(secret);
+        } catch (IllegalArgumentException e) {
+            log.error("JWT 密钥不是合法的 Base64 编码");
+            throw new IllegalStateException("JWT_SECRET 必须是 Base64 编码的随机密钥");
+        }
+        if (keyBytes.length < 32) {
+            log.error("JWT 密钥强度不足（需 ≥32 字节，实际 {} 字节）", keyBytes.length);
+            throw new IllegalStateException(
+                    "JWT_SECRET 强度不足：HS256 需要至少 32 字节（256 位）。生成命令: openssl rand -base64 32");
+        }
         log.info("JWT 密钥已从环境变量/系统属性加载成功");
         SECRET = secret;
-        KEY = Keys.hmacShaKeyFor(Base64.getDecoder().decode(SECRET));
+        KEY = Keys.hmacShaKeyFor(keyBytes);
     }
 
     private static String resolveSecret() {
@@ -64,6 +82,8 @@ public class JwtUtil {
         Date now = new Date();
         Date expiration = new Date(now.getTime() + expirationMs);
         return Jwts.builder()
+                .issuer(ISSUER)
+                .audience().add(AUDIENCE).and()
                 .subject(username)
                 .claim("userId", userId)
                 .claim("tokenVersion", tokenVersion)
@@ -104,6 +124,8 @@ public class JwtUtil {
     private static Claims parseToken(String token) {
         return Jwts.parser()
                 .verifyWith(KEY)
+                .requireIssuer(ISSUER)
+                .requireAudience(AUDIENCE)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();

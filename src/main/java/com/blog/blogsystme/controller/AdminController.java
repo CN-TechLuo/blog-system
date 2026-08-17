@@ -12,6 +12,7 @@ import com.blog.blogsystme.mapper.LikeMapper;
 import com.blog.blogsystme.mapper.NotificationMapper;
 import com.blog.blogsystme.mapper.PasswordResetTokenMapper;
 import com.blog.blogsystme.mapper.UserMapper;
+import com.blog.blogsystme.util.AuditLogger;
 import com.blog.blogsystme.util.PageUtil;
 import com.blog.blogsystme.util.RoleConst;
 import io.swagger.v3.oas.annotations.Operation;
@@ -89,6 +90,7 @@ public class AdminController {
             User seed = userMapper.findByUsername(bootstrapUsername);
             if (seed != null) {
                 userMapper.updateRole(seed.getId(), RoleConst.ADMIN);
+                AuditLogger.log("ADMIN_BOOTSTRAP", "userId=" + seed.getId() + ", username=" + seed.getUsername());
                 log.warn("系统中无管理员，已将用户 {} (id={}) 提升为管理员，请尽快登录确认",
                         seed.getUsername(), seed.getId());
             } else {
@@ -139,6 +141,8 @@ public class AdminController {
         feedbackMapper.deleteByUserId(id);
         tokenMapper.deleteByUserId(id);
         userMapper.deleteById(id);
+        AuditLogger.log("ADMIN_DELETE_USER", "operatorId=" + request.getAttribute("userId")
+                + ", targetUserId=" + id + ", targetUsername=" + user.getUsername());
         return ResponseEntity.ok(ApiResponse.success("删除成功（含该用户全部数据）"));
     }
 
@@ -165,6 +169,8 @@ public class AdminController {
         commentMapper.deleteByArticleId(id);
         notificationMapper.deleteByArticleId(id);
         articleMapper.deleteByAdmin(id);
+        AuditLogger.log("ADMIN_DELETE_ARTICLE", "operatorId=" + request.getAttribute("userId")
+                + ", articleId=" + id);
         return ResponseEntity.ok(ApiResponse.success("删除成功"));
     }
 
@@ -195,6 +201,8 @@ public class AdminController {
         if (rows == 0) {
             return ResponseEntity.badRequest().body(ApiResponse.fail("反馈不存在"));
         }
+        AuditLogger.log("ADMIN_HANDLE_FEEDBACK", "operatorId=" + request.getAttribute("userId")
+                + ", feedbackId=" + id + ", status=" + status);
         return ResponseEntity.ok(ApiResponse.success("已处理"));
     }
 
@@ -220,6 +228,8 @@ public class AdminController {
             return ResponseEntity.badRequest().body(ApiResponse.fail("用户不存在"));
         }
         userMapper.updateRole(userId, RoleConst.ADMIN);
+        AuditLogger.log("ADMIN_GRANT", "operatorId=" + request.getAttribute("userId")
+                + ", targetUserId=" + userId + ", targetUsername=" + target.getUsername());
         return ResponseEntity.ok(ApiResponse.success("已设置为管理员"));
     }
 
@@ -239,6 +249,8 @@ public class AdminController {
             return ResponseEntity.badRequest().body(ApiResponse.fail("系统至少需要保留一名管理员"));
         }
         userMapper.updateRole(userId, RoleConst.USER);
+        AuditLogger.log("ADMIN_REVOKE", "operatorId=" + request.getAttribute("userId")
+                + ", targetUserId=" + userId + ", targetUsername=" + target.getUsername());
         return ResponseEntity.ok(ApiResponse.success("已撤销管理员权限"));
     }
 }
