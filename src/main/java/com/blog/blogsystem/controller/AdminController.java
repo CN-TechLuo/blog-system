@@ -12,6 +12,7 @@ import com.blog.blogsystem.mapper.LikeMapper;
 import com.blog.blogsystem.mapper.NotificationMapper;
 import com.blog.blogsystem.mapper.PasswordResetTokenMapper;
 import com.blog.blogsystem.mapper.UserMapper;
+import com.blog.blogsystem.service.SiteConfigService;
 import com.blog.blogsystem.util.AuditLogger;
 import com.blog.blogsystem.util.PageUtil;
 import com.blog.blogsystem.util.RoleConst;
@@ -54,6 +55,7 @@ public class AdminController {
     private final FollowMapper followMapper;
     private final NotificationMapper notificationMapper;
     private final PasswordResetTokenMapper tokenMapper;
+    private final SiteConfigService siteConfigService;
 
     @Value("${admin.bootstrap-username:admin}")
     private String bootstrapUsername;
@@ -66,7 +68,7 @@ public class AdminController {
                            CommentMapper commentMapper, FeedbackMapper feedbackMapper,
                            LikeMapper likeMapper, BookmarkMapper bookmarkMapper,
                            FollowMapper followMapper, NotificationMapper notificationMapper,
-                           PasswordResetTokenMapper tokenMapper) {
+                           PasswordResetTokenMapper tokenMapper, SiteConfigService siteConfigService) {
         this.userMapper = userMapper;
         this.articleMapper = articleMapper;
         this.commentMapper = commentMapper;
@@ -76,6 +78,7 @@ public class AdminController {
         this.followMapper = followMapper;
         this.notificationMapper = notificationMapper;
         this.tokenMapper = tokenMapper;
+        this.siteConfigService = siteConfigService;
     }
 
     @PostConstruct
@@ -217,6 +220,32 @@ public class AdminController {
         data.put("feedback", feedbackMapper.countAll());
         data.put("likes", likeMapper.countAll());
         return ResponseEntity.ok(ApiResponse.success("查询成功", data));
+    }
+
+    @GetMapping("/contact-email")
+    @Operation(summary = "查询管理员联系邮箱")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getContactEmail(HttpServletRequest request) {
+        if (!checkAdmin(request)) return ResponseEntity.status(403).body(ApiResponse.fail("无权限"));
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("contactEmail", siteConfigService.getContactEmail());
+        return ResponseEntity.ok(ApiResponse.success("查询成功", data));
+    }
+
+    @PutMapping("/contact-email")
+    @Operation(summary = "设置管理员联系邮箱")
+    public ResponseEntity<ApiResponse<Void>> setContactEmail(HttpServletRequest request,
+                                                             @RequestBody Map<String, String> body) {
+        if (!checkAdmin(request)) return ResponseEntity.status(403).body(ApiResponse.fail("无权限"));
+        String email = body.getOrDefault("email", "").trim();
+        if (!email.isEmpty() && !email.matches("^[\\w.-]+@[\\w.-]+\\.[A-Za-z]{2,}$")) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("邮箱格式不正确"));
+        }
+        if (!siteConfigService.updateContactEmail(email)) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("邮箱格式不正确"));
+        }
+        AuditLogger.log("ADMIN_SET_CONTACT_EMAIL", "operatorId=" + request.getAttribute("userId")
+                + ", email=" + (email.isEmpty() ? "(清空)" : email));
+        return ResponseEntity.ok(ApiResponse.success("设置成功"));
     }
 
     @PutMapping("/set-admin/{userId}")
