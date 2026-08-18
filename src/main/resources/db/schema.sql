@@ -186,5 +186,17 @@ CREATE TABLE IF NOT EXISTS `password_reset_token` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='密码重置令牌表';
 
 -- ============================================================
+-- 12. 站点配置表（单行：id=1）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `site_config` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `contact_email` VARCHAR(128) NOT NULL DEFAULT '',
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='站点配置表';
+
+INSERT INTO `site_config` (`id`, `contact_email`) VALUES (1, '')
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+-- ============================================================
 -- 初始化完成
 -- ============================================================

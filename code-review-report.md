@@ -1,33 +1,33 @@
-﻿# 鍗氬绯荤粺浠ｇ爜瀹℃煡鎶ュ憡
+# 博客系统代码审查报告
 
-> 瀹℃煡鏃ユ湡锛?026-06-24 | 椤圭洰锛歜log-systme锛圫pring Boot 4.0.6 + MyBatis + JWT锛?
+> 审查日期：2026-06-24 | 项目：blog-systme（Spring Boot 4.0.6 + MyBatis + JWT）
 
 ---
 
-## 涓€銆佸畨鍏ㄦ紡娲?
+## 一、安全漏洞
 
-### 1.1 楂?鈥?JWT 瀵嗛挜纭紪鐮侀粯璁ゅ€?
+### 1.1 高 — JWT 密钥硬编码默认值
 
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/util/JwtUtil.java`](src/main/java/com/blog/blogsystem/util/JwtUtil.java:15)
+**文件：** [`src/main/java/com/blog/blogsystme/util/JwtUtil.java`](src/main/java/com/blog/blogsystme/util/JwtUtil.java:15)
 
-**闂鎻忚堪锛?* 铏界劧浼樺厛璇诲彇鐜鍙橀噺 `JWT_SECRET` / 绯荤粺灞炴€?`jwt.secret`锛屼絾瀛樺湪纭紪鐮佺殑 Base64 榛樿瀵嗛挜銆傚鏋滆繍缁村繕璁拌缃幆澧冨彉閲忥紝搴旂敤灏嗕互寮卞瘑閽ュ惎鍔紝鎵€鏈?Token 鍙杞绘槗浼€犮€?
+**问题描述：** 虽然优先读取环境变量 `JWT_SECRET` / 系统属性 `jwt.secret`，但存在硬编码的 Base64 默认密钥。如果运维忘记设置环境变量，应用将以弱密钥启动，所有 Token 可被轻易伪造。
 
-**淇鍚庝唬鐮侊細**
+**修复后代码：**
 
 ```java
-// 绉婚櫎纭紪鐮侀粯璁ゅ€硷紝鍚姩鏃惰嫢鏈厤缃瘑閽ュ垯鎶涘嚭寮傚父闃绘鍚姩
+// 移除硬编码默认值，启动时若未配置密钥则抛出异常阻止启动
 private static final String SECRET = resolveSecret();
 
 private static final SecretKey KEY;
 
 static {
     if (SECRET == null || SECRET.isBlank()) {
-        log.error("JWT 瀵嗛挜鏈厤缃紒璇疯缃幆澧冨彉閲?JWT_SECRET 鎴栫郴缁熷睘鎬?-Djwt.secret");
+        log.error("JWT 密钥未配置！请设置环境变量 JWT_SECRET 或系统属性 -Djwt.secret");
         throw new IllegalStateException(
-                "JWT_SECRET 鐜鍙橀噺鎴?jwt.secret 绯荤粺灞炴€у繀椤婚厤缃€傜敓鎴愬瘑閽ュ懡浠? openssl rand -base64 32");
+                "JWT_SECRET 环境变量或 jwt.secret 系统属性必须配置。生成密钥命令: openssl rand -base64 32");
     }
     KEY = Keys.hmacShaKeyFor(Base64.getDecoder().decode(SECRET));
-    log.info("JWT 瀵嗛挜宸蹭粠鐜鍙橀噺/绯荤粺灞炴€у姞杞芥垚鍔?);
+    log.info("JWT 密钥已从环境变量/系统属性加载成功");
 }
 
 private static String resolveSecret() {
@@ -41,13 +41,13 @@ private static String resolveSecret() {
 
 ---
 
-### 1.2 楂?鈥?JWT 鏍￠獙鏈湪 create() 鏂规硶涓皟鐢?validateToken()
+### 1.2 高 — JWT 校验未在 create() 方法中调用 validateToken()
 
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/controller/ArticleController.java`](src/main/java/com/blog/blogsystem/controller/ArticleController.java:27)锛堝師濮嬩唬鐮侊級
+**文件：** [`src/main/java/com/blog/blogsystme/controller/ArticleController.java`](src/main/java/com/blog/blogsystme/controller/ArticleController.java:27)（原始代码）
 
-**闂鎻忚堪锛?* `create()` 鏂规硶鐩存帴璋冪敤 `getUsernameFromToken()` 鑰屾病鏈夊厛鐢?`validateToken()` 鏍￠獙銆俙validateToken()` 鏂规硶宸插畾涔変絾浠庢湭琚皟鐢紝杩囨湡/浼€?token 鐨勫紓甯镐細鐩存帴鎶涘嚭鏈鐞嗙殑 `ExpiredJwtException`銆?
+**问题描述：** `create()` 方法直接调用 `getUsernameFromToken()` 而没有先用 `validateToken()` 校验。`validateToken()` 方法已定义但从未被调用，过期/伪造 token 的异常会直接抛出未处理的 `ExpiredJwtException`。
 
-**淇鍚庝唬鐮侊細**
+**修复后代码：**
 
 ```java
 @PostMapping("/create")
@@ -55,14 +55,14 @@ public ResponseEntity<ApiResponse<Long>> create(@RequestBody Article article, Ht
     String authHeader = request.getHeader("Authorization");
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiResponse.fail("鏈櫥褰曟垨 token 鏍煎紡閿欒"));
+                .body(ApiResponse.fail("未登录或 token 格式错误"));
     }
     String token = authHeader.substring(7);
 
-    // 鍏堟牎楠?token 鏈夋晥鎬?
+    // 先校验 token 有效性
     if (!JwtUtil.validateToken(token)) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiResponse.fail("token 鏃犳晥鎴栧凡杩囨湡"));
+                .body(ApiResponse.fail("token 无效或已过期"));
     }
 
     String username = JwtUtil.getUsernameFromToken(token);
@@ -73,29 +73,29 @@ public ResponseEntity<ApiResponse<Long>> create(@RequestBody Article article, Ht
 
 ---
 
-### 1.3 楂?鈥?SQL 娉ㄥ叆妫€鏌ワ細鍏ㄩ儴閫氳繃 鉁?
+### 1.3 高 — SQL 注入检查：全部通过 ✅
 
-**鏂囦欢锛?* [`UserMapper.java`](src/main/java/com/blog/blogsystem/mapper/UserMapper.java)銆乕`ArticleMapper.java`](src/main/java/com/blog/blogsystem/mapper/ArticleMapper.java)
+**文件：** [`UserMapper.java`](src/main/java/com/blog/blogsystme/mapper/UserMapper.java)、[`ArticleMapper.java`](src/main/java/com/blog/blogsystme/mapper/ArticleMapper.java)
 
-**妫€鏌ョ粨鏋滐細** 鎵€鏈?`@Select`銆乣@Insert`銆乣@Update`銆乣@Delete` 娉ㄨВ鍧囦娇鐢?MyBatis `#{}` 鍙傛暟鍗犱綅绗︼紝宸查槻 SQL 娉ㄥ叆銆傛棤椋庨櫓銆?
-
----
-
-### 1.4 涓?鈥?瀵嗙爜鍔犲瘑锛欱Crypt 姝ｇ‘浣跨敤 鉁?
-
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/util/PasswordUtil.java`](src/main/java/com/blog/blogsystem/util/PasswordUtil.java)
-
-**妫€鏌ョ粨鏋滐細** 浣跨敤 `BCryptPasswordEncoder`锛堥粯璁ゅ己搴?10 杞級锛屽瘑鐮佷笉浼氭槑鏂囧瓨鍌ㄣ€傛敞鍐屾椂鍔犲瘑銆佺櫥褰曟椂 `matches()` 楠岃瘉锛屼娇鐢ㄦ纭€傛棤椋庨櫓銆?
+**检查结果：** 所有 `@Select`、`@Insert`、`@Update`、`@Delete` 注解均使用 MyBatis `#{}` 参数占位符，已防 SQL 注入。无风险。
 
 ---
 
-### 1.5 涓?鈥?CORS 璺ㄥ煙閰嶇疆涔嬪墠缂哄け
+### 1.4 中 — 密码加密：BCrypt 正确使用 ✅
 
-**鏂囦欢锛?* 鏂板 [`src/main/java/com/blog/blogsystem/config/WebConfig.java`](src/main/java/com/blog/blogsystem/config/WebConfig.java)
+**文件：** [`src/main/java/com/blog/blogsystme/util/PasswordUtil.java`](src/main/java/com/blog/blogsystme/util/PasswordUtil.java)
 
-**闂鎻忚堪锛?* 椤圭洰鍘熷厛娌℃湁浠讳綍 CORS 閰嶇疆锛屾祻瑙堝櫒绔法鍩熻姹備細鐩存帴琚嫤鎴€?
+**检查结果：** 使用 `BCryptPasswordEncoder`（默认强度 10 轮），密码不会明文存储。注册时加密、登录时 `matches()` 验证，使用正确。无风险。
 
-**淇鍚庝唬鐮侊細**
+---
+
+### 1.5 中 — CORS 跨域配置之前缺失
+
+**文件：** 新增 [`src/main/java/com/blog/blogsystme/config/WebConfig.java`](src/main/java/com/blog/blogsystme/config/WebConfig.java)
+
+**问题描述：** 项目原先没有任何 CORS 配置，浏览器端跨域请求会直接被拦截。
+
+**修复后代码：**
 
 ```java
 @Configuration
@@ -103,7 +103,7 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOriginPatterns("*")  // 鐢熶骇鐜鏇挎崲涓哄叿浣撳煙鍚?
+                .allowedOriginPatterns("*")  // 生产环境替换为具体域名
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true)
@@ -114,13 +114,13 @@ public class WebConfig implements WebMvcConfigurer {
 
 ---
 
-### 1.6 涓?鈥?鏁版嵁搴?SSL 杩炴帴鍏抽棴
+### 1.6 中 — 数据库 SSL 连接关闭
 
-**鏂囦欢锛?* [`src/main/resources/application.properties`](src/main/resources/application.properties:2)锛堝師濮嬩唬鐮侊級
+**文件：** [`src/main/resources/application.properties`](src/main/resources/application.properties:2)（原始代码）
 
-**闂鎻忚堪锛?* `useSSL=false` 鍏抽棴浜嗘暟鎹簱杩炴帴鍔犲瘑銆?
+**问题描述：** `useSSL=false` 关闭了数据库连接加密。
 
-**淇鍚庯細**
+**修复后：**
 
 ```properties
 spring.datasource.url=jdbc:mysql://localhost:3306/blog_db?useSSL=true&requireSSL=true&serverTimezone=Asia/Shanghai
@@ -128,28 +128,28 @@ spring.datasource.url=jdbc:mysql://localhost:3306/blog_db?useSSL=true&requireSSL
 
 ---
 
-### 1.7 浣?鈥?Controller 鐩存帴鎺ユ敹 Entity 浣滀负璇锋眰浣?
+### 1.7 低 — Controller 直接接收 Entity 作为请求体
 
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/controller/UserController.java`](src/main/java/com/blog/blogsystem/controller/UserController.java:26)锛堝師濮嬩唬鐮侊級
+**文件：** [`src/main/java/com/blog/blogsystme/controller/UserController.java`](src/main/java/com/blog/blogsystme/controller/UserController.java:26)（原始代码）
 
-**闂鎻忚堪锛?* `register(@RequestBody User user)` 鐩存帴灏嗘暟鎹簱瀹炰綋鏆撮湶涓鸿姹備綋锛岀敤鎴峰彲灏濊瘯浼犲叆 `id`銆乣createTime` 绛変笉搴旂敱瀹㈡埛绔帶鍒剁殑瀛楁銆傚缓璁娇鐢ㄧ嫭绔?DTO銆?
+**问题描述：** `register(@RequestBody User user)` 直接将数据库实体暴露为请求体，用户可尝试传入 `id`、`createTime` 等不应由客户端控制的字段。建议使用独立 DTO。
 
-**寤鸿锛堟湭寮哄埗淇敼锛夛細** 鍒涘缓 `RegisterRequest` DTO锛屼粎鍖呭惈 `username`銆乣password`銆乣email`銆?
+**建议（未强制修改）：** 创建 `RegisterRequest` DTO，仅包含 `username`、`password`、`email`。
 
 ---
 
-## 浜屻€佹€ц兘鐡堕
+## 二、性能瓶颈
 
-### 2.1 楂?鈥?缂哄皯鏁版嵁搴撳繀瑕佺储寮?
+### 2.1 高 — 缺少数据库必要索引
 
-**鏂囦欢锛?* 鏂板 [`src/main/resources/db/indexes.sql`](src/main/resources/db/indexes.sql)
+**文件：** 新增 [`src/main/resources/db/indexes.sql`](src/main/resources/db/indexes.sql)
 
-**闂鎻忚堪锛?* 
-- `user.username` 鍦ㄧ櫥褰曟椂楂橀鏌ヨ锛坄findByUsername`锛夛紝鏃犵储寮曚細瀵艰嚧鍏ㄨ〃鎵弿銆?
-- `article.create_time` 鍦ㄥ垎椤靛垪琛?`ORDER BY create_time DESC` 涓娇鐢紝鏃犵储寮曟帓搴忔€ц兘宸€?
-- `article.user_id` 鍦ㄤ綔鑰呰韩浠介獙璇佷腑浣跨敤銆?
+**问题描述：** 
+- `user.username` 在登录时高频查询（`findByUsername`），无索引会导致全表扫描。
+- `article.create_time` 在分页列表 `ORDER BY create_time DESC` 中使用，无索引排序性能差。
+- `article.user_id` 在作者身份验证中使用。
 
-**淇锛堟墽琛屼互涓?SQL锛夛細**
+**修复（执行以下 SQL）：**
 
 ```sql
 ALTER TABLE `user` ADD UNIQUE INDEX `idx_username` (`username`);
@@ -159,13 +159,13 @@ ALTER TABLE `article` ADD INDEX `idx_create_time` (`create_time`);
 
 ---
 
-### 2.2 涓?鈥?鍒嗛〉鍒楄〃鏌ヨ浣跨敤 SELECT *
+### 2.2 中 — 分页列表查询使用 SELECT *
 
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/mapper/ArticleMapper.java`](src/main/java/com/blog/blogsystem/mapper/ArticleMapper.java:32)锛堝師濮嬩唬鐮侊級
+**文件：** [`src/main/java/com/blog/blogsystme/mapper/ArticleMapper.java`](src/main/java/com/blog/blogsystme/mapper/ArticleMapper.java:32)（原始代码）
 
-**闂鎻忚堪锛?* `findByPage` 浣跨敤 `SELECT *` 杩斿洖鎵€鏈夊瓧娈碉紝鍖呮嫭澶ф枃鏈?`content` 瀛楁锛屽垪琛ㄩ〉涓嶉渶瑕佹枃绔犳鏂囧嵈鍏ㄩ儴浼犺緭銆?
+**问题描述：** `findByPage` 使用 `SELECT *` 返回所有字段，包括大文本 `content` 字段，列表页不需要文章正文却全部传输。
 
-**淇鍚庝唬鐮侊細**
+**修复后代码：**
 
 ```java
 @Select("SELECT id, title, user_id, view_count, create_time, update_time " +
@@ -175,71 +175,71 @@ List<Article> findByPage(@Param("start") int start, @Param("pageSize") int pageS
 
 ---
 
-### 2.3 涓?鈥?鏇存柊/鍒犻櫎鎿嶄綔瀛樺湪鍙屾煡璇紙鍙?SQL 灞傞潰鍚堝苟锛?
+### 2.3 中 — 更新/删除操作存在双查询（可 SQL 层面合并）
 
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/mapper/ArticleMapper.java`](src/main/java/com/blog/blogsystem/mapper/ArticleMapper.java)锛堟柊澧炴柟娉曪級
+**文件：** [`src/main/java/com/blog/blogsystme/mapper/ArticleMapper.java`](src/main/java/com/blog/blogsystme/mapper/ArticleMapper.java)（新增方法）
 
-**闂鎻忚堪锛?* `update()` 鍜?`delete()` 鍏?`SELECT` 楠岃瘉浣滆€呰韩浠斤紝鍐嶆墽琛屽啓鎿嶄綔锛? 娆℃暟鎹簱寰€杩旓級銆?
+**问题描述：** `update()` 和 `delete()` 先 `SELECT` 验证作者身份，再执行写操作（2 次数据库往返）。
 
-**淇鍚庝唬鐮侊紙鏂板 SQL 灞傞潰閴存潈鏂规硶锛夛細**
+**修复后代码（新增 SQL 层面鉴权方法）：**
 
 ```java
-/** SQL 灞傞潰閴存潈鏇存柊锛氫粎浣滆€呮湰浜哄彲鏇存柊锛屾牴鎹繑鍥炶鏁板垽鏂潈闄?*/
+/** SQL 层面鉴权更新：仅作者本人可更新，根据返回行数判断权限 */
 @Update("UPDATE article SET title = #{title}, content = #{content} WHERE id = #{id} AND user_id = #{userId}")
 int updateByAuthor(Article article);
 
-/** SQL 灞傞潰閴存潈鍒犻櫎锛氫粎浣滆€呮湰浜哄彲鍒犻櫎 */
+/** SQL 层面鉴权删除：仅作者本人可删除 */
 @Delete("DELETE FROM article WHERE id = #{id} AND user_id = #{userId}")
 int deleteByIdAndAuthor(@Param("id") Integer id, @Param("userId") Integer userId);
 ```
 
 ---
 
-### 2.4 涓?鈥?寤鸿娣诲姞缂撳瓨锛堝缓璁紝鏈己鍒朵慨鏀癸級
+### 2.4 中 — 建议添加缓存（建议，未强制修改）
 
-**寤鸿锛?* 瀵?`article` 鍒楄〃鏌ヨ鍜岀儹闂ㄦ枃绔犲紩鍏?Redis 缂撳瓨锛屽噺灏戞暟鎹簱璇诲帇鍔涖€傚彲浣跨敤 `@Cacheable` 娉ㄨВ鎴栨墜鍔?Redis 鎿嶄綔銆?
-
----
-
-## 涓夈€佷唬鐮佽鑼?
-
-### 3.1 楂?鈥?鍖呭悕鎷煎啓閿欒 + 閲嶅鍖?
-
-**鏂囦欢锛?*
-- `com.blog.blogsystme`锛堜富浠ｇ爜鍖咃紝鎷煎啓閿欒锛?systme" 搴斾负 "system"锛?
-- `com.blog.blogsystem`锛堥噸澶嶇殑鏃у寘锛屽凡鍒犻櫎锛?
-
-**闂鎻忚堪锛?* 瀛樺湪涓や釜鍖?`blogsystme`锛堟嫾鍐欓敊璇級鍜?`blogsystem`锛堟纭嫾鍐欙級锛屽寘鍚噸澶嶇殑 `BlogSystemApplication` 鍜?Entity 绫汇€俙com/blog/bl` 涓烘畫鐣欑殑鏃犳墿灞曞悕鏂囦欢銆?
-
-**淇锛?* 宸插垹闄?`blogsystem` 鍖呫€乣com/blog/bl` 娈嬬暀鏂囦欢銆傚寘鍚?`blogsystme` 鍥犳秹鍙婂叏椤圭洰閲嶅懡鍚嶏紝寤鸿鍚庣画缁熶竴閲嶆瀯銆?
+**建议：** 对 `article` 列表查询和热门文章引入 Redis 缓存，减少数据库读压力。可使用 `@Cacheable` 注解或手动 Redis 操作。
 
 ---
 
-### 3.2 楂?鈥?System.out.println 鏇夸唬涓?SLF4J 鏃ュ織
+## 三、代码规范
 
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/controller/UserController.java`](src/main/java/com/blog/blogsystem/controller/UserController.java:28-44)锛堝師濮嬩唬鐮侊級
+### 3.1 高 — 包名拼写错误 + 重复包
 
-**闂鎻忚堪锛?* 浣跨敤 `System.out.println` 杈撳嚭璋冭瘯淇℃伅锛屾棤娉曟帶鍒舵棩蹇楃骇鍒紝鍙兘娉勯湶鐢ㄦ埛鍚嶇瓑鏁忔劅淇℃伅銆?
+**文件：**
+- `com.blog.blogsystme`（主代码包，拼写错误："systme" 应为 "system"）
+- `com.blog.blogsystem`（重复的旧包，已删除）
 
-**淇鍚庝唬鐮侊細**
+**问题描述：** 存在两个包 `blogsystme`（拼写错误）和 `blogsystem`（正确拼写），包含重复的 `BlogSystemApplication` 和 Entity 类。`com/blog/bl` 为残留的无扩展名文件。
+
+**修复：** 已删除 `blogsystem` 包、`com/blog/bl` 残留文件。包名 `blogsystme` 因涉及全项目重命名，建议后续统一重构。
+
+---
+
+### 3.2 高 — System.out.println 替代为 SLF4J 日志
+
+**文件：** [`src/main/java/com/blog/blogsystme/controller/UserController.java`](src/main/java/com/blog/blogsystme/controller/UserController.java:28-44)（原始代码）
+
+**问题描述：** 使用 `System.out.println` 输出调试信息，无法控制日志级别，可能泄露用户名等敏感信息。
+
+**修复后代码：**
 
 ```java
 private static final Logger log = LoggerFactory.getLogger(UserController.class);
 
-log.debug("鏀跺埌娉ㄥ唽璇锋眰: username={}", user.getUsername());
-log.info("娉ㄥ唽缁撴灉: username={}, rows={}", user.getUsername(), rows);
-log.info("鐧诲綍鎴愬姛: username={}", user.getUsername());
+log.debug("收到注册请求: username={}", user.getUsername());
+log.info("注册结果: username={}, rows={}", user.getUsername(), rows);
+log.info("登录成功: username={}", user.getUsername());
 ```
 
 ---
 
-### 3.3 楂?鈥?缂哄皯缁熶竴鐨?API 鍝嶅簲绫?+ 鍐呴儴绫?RegisterResponse
+### 3.3 高 — 缺少统一的 API 响应类 + 内部类 RegisterResponse
 
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/controller/UserController.java`](src/main/java/com/blog/blogsystem/controller/UserController.java:54)锛堝師濮嬩唬鐮侊級
+**文件：** [`src/main/java/com/blog/blogsystme/controller/UserController.java`](src/main/java/com/blog/blogsystme/controller/UserController.java:54)（原始代码）
 
-**闂鎻忚堪锛?* `RegisterResponse` 瀹氫箟鍦?`UserController` 鍐呴儴锛屼笌 `PageResponse` 鍔熻兘閲嶅彔銆?
+**问题描述：** `RegisterResponse` 定义在 `UserController` 内部，与 `PageResponse` 功能重叠。
 
-**淇锛?* 鏂板 [`src/main/java/com/blog/blogsystem/dto/ApiResponse.java`](src/main/java/com/blog/blogsystem/dto/ApiResponse.java) 娉涘瀷鍝嶅簲绫伙細
+**修复：** 新增 [`src/main/java/com/blog/blogsystme/dto/ApiResponse.java`](src/main/java/com/blog/blogsystme/dto/ApiResponse.java) 泛型响应类：
 
 ```java
 @Getter
@@ -256,77 +256,77 @@ public class ApiResponse<T> {
 
 ---
 
-### 3.4 涓?鈥?Controller 杩斿洖鍊肩被鍨嬩笉缁熶竴锛堝凡淇锛?
+### 3.4 中 — Controller 返回值类型不统一（已修复）
 
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/controller/ArticleController.java`](src/main/java/com/blog/blogsystem/controller/ArticleController.java:27)锛堝師濮嬩唬鐮侊級
+**文件：** [`src/main/java/com/blog/blogsystme/controller/ArticleController.java`](src/main/java/com/blog/blogsystme/controller/ArticleController.java:27)（原始代码）
 
-**闂鎻忚堪锛?* `create()` 杩斿洖绾?`String`锛屽叾浠栨柟娉曡繑鍥?`ResponseEntity`锛屼笉涓€鑷淬€?
+**问题描述：** `create()` 返回纯 `String`，其他方法返回 `ResponseEntity`，不一致。
 
-**淇鍚庯細** `create()` 涔熻繑鍥?`ResponseEntity<ApiResponse<Long>>`銆?
-
----
-
-### 3.5 涓?鈥?鏂规硶璁块棶淇グ绗︾己澶?
-
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/controller/ArticleController.java`](src/main/java/com/blog/blogsystem/controller/ArticleController.java:76)锛堝師濮嬩唬鐮侊級
-
-**闂鎻忚堪锛?* `getCurrentUserId()` 杈呭姪鏂规硶缂哄皯 `private` 淇グ绗︺€?
-
-**淇鍚庯細** `private Integer getCurrentUserId(HttpServletRequest request) { ... }`
+**修复后：** `create()` 也返回 `ResponseEntity<ApiResponse<Long>>`。
 
 ---
 
-### 3.6 涓?鈥?缂哄皯杈撳叆鍙傛暟鏍￠獙娉ㄨВ
+### 3.5 中 — 方法访问修饰符缺失
 
-**鏂囦欢锛?* [`User.java`](src/main/java/com/blog/blogsystem/entity/User.java)銆乕`Article.java`](src/main/java/com/blog/blogsystem/entity/Article.java)
+**文件：** [`src/main/java/com/blog/blogsystme/controller/ArticleController.java`](src/main/java/com/blog/blogsystme/controller/ArticleController.java:76)（原始代码）
 
-**闂鎻忚堪锛?* 鏃犱换浣?`@NotBlank`銆乣@Size`銆乣@Email` 鏍￠獙锛岀敤鎴峰彲鎻愪氦绌虹敤鎴峰悕銆佺┖瀵嗙爜銆?
+**问题描述：** `getCurrentUserId()` 辅助方法缺少 `private` 修饰符。
 
-**淇鍚庝唬鐮侊細**
+**修复后：** `private Integer getCurrentUserId(HttpServletRequest request) { ... }`
+
+---
+
+### 3.6 中 — 缺少输入参数校验注解
+
+**文件：** [`User.java`](src/main/java/com/blog/blogsystme/entity/User.java)、[`Article.java`](src/main/java/com/blog/blogsystme/entity/Article.java)
+
+**问题描述：** 无任何 `@NotBlank`、`@Size`、`@Email` 校验，用户可提交空用户名、空密码。
+
+**修复后代码：**
 
 ```java
 // User.java
-@NotBlank(message = "鐢ㄦ埛鍚嶄笉鑳戒负绌?)
-@Size(min = 2, max = 20, message = "鐢ㄦ埛鍚嶉暱搴﹂渶鍦?-20浣嶄箣闂?)
+@NotBlank(message = "用户名不能为空")
+@Size(min = 2, max = 20, message = "用户名长度需在2-20位之间")
 private String username;
 
-@NotBlank(message = "瀵嗙爜涓嶈兘涓虹┖")
-@Size(min = 6, max = 50, message = "瀵嗙爜闀垮害闇€鍦?-50浣嶄箣闂?)
+@NotBlank(message = "密码不能为空")
+@Size(min = 6, max = 50, message = "密码长度需在6-50位之间")
 private String password;
 
-@Email(message = "閭鏍煎紡涓嶆纭?)
+@Email(message = "邮箱格式不正确")
 private String email;
 
 // Article.java
-@NotBlank(message = "鏂囩珷鏍囬涓嶈兘涓虹┖")
-@Size(min = 1, max = 200, message = "鏂囩珷鏍囬闀垮害闇€鍦?-200浣嶄箣闂?)
+@NotBlank(message = "文章标题不能为空")
+@Size(min = 1, max = 200, message = "文章标题长度需在1-200位之间")
 private String title;
 
-@NotBlank(message = "鏂囩珷鍐呭涓嶈兘涓虹┖")
+@NotBlank(message = "文章内容不能为空")
 private String content;
 ```
 
 ---
 
-### 3.7 浣?鈥?TestController 娈嬬暀鍦ㄧ敓浜т唬鐮侊紙宸插垹闄わ級
+### 3.7 低 — TestController 残留在生产代码（已删除）
 
-**鏂囦欢锛?* [`src/main/java/com/blog/blogsystem/TestController.java`](src/main/java/com/blog/blogsystem/TestController.java)锛堝凡鍒犻櫎锛?
+**文件：** [`src/main/java/com/blog/blogsystme/TestController.java`](src/main/java/com/blog/blogsystme/TestController.java)（已删除）
 
-**闂鎻忚堪锛?* 娴嬭瘯鐢?`/hello` 绔偣娈嬬暀鍦ㄧ敓浜т唬鐮佷腑銆?
+**问题描述：** 测试用 `/hello` 端点残留在生产代码中。
 
-**淇锛?* 宸插垹闄ゃ€?
+**修复：** 已删除。
 
 ---
 
-## 鍥涖€佽繍缁翠笌鍙娴嬫€?
+## 四、运维与可观测性
 
-### 4.1 楂?鈥?缂哄皯鍏ㄥ眬寮傚父澶勭悊鍣?
+### 4.1 高 — 缺少全局异常处理器
 
-**鏂囦欢锛?* 鏂板 [`src/main/java/com/blog/blogsystem/config/GlobalExceptionHandler.java`](src/main/java/com/blog/blogsystem/config/GlobalExceptionHandler.java)
+**文件：** 新增 [`src/main/java/com/blog/blogsystme/config/GlobalExceptionHandler.java`](src/main/java/com/blog/blogsystme/config/GlobalExceptionHandler.java)
 
-**闂鎻忚堪锛?* 鍘熷厛鏃?`@RestControllerAdvice`锛孞WT 寮傚父鍜岃繍琛屾椂寮傚父鐩存帴鏆撮湶缁欏墠绔紝杩斿洖 HTML 閿欒椤佃€岄潪 JSON銆?
+**问题描述：** 原先无 `@RestControllerAdvice`，JWT 异常和运行时异常直接暴露给前端，返回 HTML 错误页而非 JSON。
 
-**淇鍚庝唬鐮侊細**
+**修复后代码：**
 
 ```java
 @RestControllerAdvice
@@ -334,51 +334,51 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({SignatureException.class, IllegalArgumentException.class})
     public ResponseEntity<ApiResponse<Void>> handleJwtSignatureException(Exception e) {
-        log.warn("JWT 鏍￠獙澶辫触: {}", e.getMessage());
+        log.warn("JWT 校验失败: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiResponse.fail("token 鏃犳晥鎴栧凡杩囨湡"));
+                .body(ApiResponse.fail("token 无效或已过期"));
     }
 
     @ExceptionHandler(ExpiredJwtException.class)
     public ResponseEntity<ApiResponse<Void>> handleExpiredJwtException(ExpiredJwtException e) {
-        log.warn("JWT 宸茶繃鏈? {}", e.getMessage());
+        log.warn("JWT 已过期: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiResponse.fail("token 宸茶繃鏈燂紝璇烽噸鏂扮櫥褰?));
+                .body(ApiResponse.fail("token 已过期，请重新登录"));
     }
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<Void>> handleRuntimeException(RuntimeException e) {
-        log.error("鏈嶅姟鍣ㄥ唴閮ㄩ敊璇?, e);
+        log.error("服务器内部错误", e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.fail("鏈嶅姟鍣ㄥ唴閮ㄩ敊璇紝璇风◢鍚庨噸璇?));
+                .body(ApiResponse.fail("服务器内部错误，请稍后重试"));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
-        log.error("鏈鏈熺殑寮傚父", e);
+        log.error("未预期的异常", e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.fail("鏈嶅姟鍣ㄥ唴閮ㄩ敊璇?));
+                .body(ApiResponse.fail("服务器内部错误"));
     }
 }
 ```
 
 ---
 
-### 4.2 涓?鈥?鏁版嵁瀵嗙爜宸茬幆澧冨彉閲忓寲 鉁?/ JWT 瀵嗛挜宸蹭慨澶?
+### 4.2 中 — 数据密码已环境变量化 ✅ / JWT 密钥已修复
 
-**鏂囦欢锛?* [`src/main/resources/application.properties`](src/main/resources/application.properties:4-5)
+**文件：** [`src/main/resources/application.properties`](src/main/resources/application.properties:4-5)
 
-**妫€鏌ョ粨鏋滐細** 鏁版嵁搴撶敤鎴峰悕鍜屽瘑鐮佸凡浣跨敤 `${DB_USERNAME}` 鍜?`${DB_PASSWORD}` 鐜鍙橀噺鍗犱綅銆侸WT 瀵嗛挜宸插湪 [`JwtUtil.java`](src/main/java/com/blog/blogsystem/util/JwtUtil.java) 涓己鍒惰姹傜幆澧冨彉閲忔敞鍏ャ€?
+**检查结果：** 数据库用户名和密码已使用 `${DB_USERNAME}` 和 `${DB_PASSWORD}` 环境变量占位。JWT 密钥已在 [`JwtUtil.java`](src/main/java/com/blog/blogsystme/util/JwtUtil.java) 中强制要求环境变量注入。
 
 ---
 
-### 4.3 涓?鈥?娣诲姞 Actuator 鐩戞帶渚濊禆
+### 4.3 中 — 添加 Actuator 监控依赖
 
-**鏂囦欢锛?* [`pom.xml`](pom.xml)锛堟柊澧炰緷璧栵級
+**文件：** [`pom.xml`](pom.xml)（新增依赖）
 
-**闂鎻忚堪锛?* 鍘熷厛鏃犲仴搴锋鏌ョ鐐广€?
+**问题描述：** 原先无健康检查端点。
 
-**淇锛?* 宸叉坊鍔?`spring-boot-starter-actuator`锛岄厤缃粎鏆撮湶 `health` 鍜?`info` 绔偣锛?
+**修复：** 已添加 `spring-boot-starter-actuator`，配置仅暴露 `health` 和 `info` 端点：
 
 ```properties
 management.endpoints.web.exposure.include=health,info
@@ -387,40 +387,40 @@ management.endpoint.health.show-details=when-authorized
 
 ---
 
-### 4.4 浣?鈥?缂哄皯缁熶竴璁よ瘉鎷︽埅鍣紙寤鸿锛?
+### 4.4 低 — 缺少统一认证拦截器（建议）
 
-**闂鎻忚堪锛?* `getCurrentUserId()` 鏂规硶鍦?`ArticleController` 涓澶勯噸澶嶈皟鐢紝寤鸿瀹炵幇 `HandlerInterceptor` 缁熶竴澶勭悊 JWT 璁よ瘉銆?
+**问题描述：** `getCurrentUserId()` 方法在 `ArticleController` 中多处重复调用，建议实现 `HandlerInterceptor` 统一处理 JWT 认证。
 
 ---
 
-## 浜斻€佷慨澶嶆眹鎬?
+## 五、修复汇总
 
-| 绫诲埆 | 闂 | 椋庨櫓绛夌骇 | 鐘舵€?|
+| 类别 | 问题 | 风险等级 | 状态 |
 |------|------|---------|------|
-| 瀹夊叏 | JWT 瀵嗛挜纭紪鐮侀粯璁ゅ€?| **楂?* | 鉁?宸蹭慨澶?|
-| 瀹夊叏 | JWT 鏍￠獙 validateToken 鏈皟鐢?| **楂?* | 鉁?宸蹭慨澶?|
-| 瀹夊叏 | SQL 娉ㄥ叆 | 鈥?| 鉁?鏃犻闄?|
-| 瀹夊叏 | BCrypt 瀵嗙爜鍔犲瘑 | 鈥?| 鉁?姝ｇ‘ |
-| 瀹夊叏 | CORS 閰嶇疆缂哄け | 涓?| 鉁?宸叉坊鍔?|
-| 瀹夊叏 | 鏁版嵁搴?SSL 鍏抽棴 | 涓?| 鉁?宸蹭慨澶?|
-| 瀹夊叏 | Controller 鐩存帴浣跨敤 Entity | 浣?| 鈿狅笍 寤鸿 |
-| 鎬ц兘 | 缂哄皯鏁版嵁搴撶储寮?| **楂?* | 鉁?宸叉彁渚?SQL |
-| 鎬ц兘 | SELECT * 杩斿洖澶у瓧娈?| 涓?| 鉁?宸蹭紭鍖?|
-| 鎬ц兘 | 鏇存柊/鍒犻櫎鍙屾煡璇?| 涓?| 鉁?宸叉彁渚涙柟娉?|
-| 鎬ц兘 | 缂撳瓨寤鸿 | 浣?| 鈿狅笍 寤鸿 |
-| 瑙勮寖 | 鍖呭悕鎷煎啓 + 閲嶅鍖?| **楂?* | 鉁?宸叉竻鐞?|
-| 瑙勮寖 | System.out.println | **楂?* | 鉁?宸叉浛鎹?|
-| 瑙勮寖 | 缂哄皯缁熶竴鍝嶅簲绫?| **楂?* | 鉁?宸插垱寤?|
-| 瑙勮寖 | 杩斿洖鍊肩被鍨嬩笉缁熶竴 | 涓?| 鉁?宸茬粺涓€ |
-| 瑙勮寖 | 璁块棶淇グ绗︾己澶?| 涓?| 鉁?宸蹭慨澶?|
-| 瑙勮寖 | 缂哄皯鍙傛暟鏍￠獙 | 涓?| 鉁?宸叉坊鍔?|
-| 瑙勮寖 | TestController 娈嬬暀 | 浣?| 鉁?宸插垹闄?|
-| 杩愮淮 | 缂哄皯鍏ㄥ眬寮傚父澶勭悊 | **楂?* | 鉁?宸插垱寤?|
-| 杩愮淮 | 鏁版嵁搴撳瘑鐮佺幆澧冨彉閲?| 鈥?| 鉁?姝ｇ‘ |
-| 杩愮淮 | JWT 瀵嗛挜鐜鍙橀噺 | 涓?| 鉁?宸蹭慨澶?|
-| 杩愮淮 | Actuator 鐩戞帶 | 涓?| 鉁?宸叉坊鍔?|
-| 杩愮淮 | 璁よ瘉鎷︽埅鍣ㄥ缓璁?| 浣?| 鈿狅笍 寤鸿 |
+| 安全 | JWT 密钥硬编码默认值 | **高** | ✅ 已修复 |
+| 安全 | JWT 校验 validateToken 未调用 | **高** | ✅ 已修复 |
+| 安全 | SQL 注入 | — | ✅ 无风险 |
+| 安全 | BCrypt 密码加密 | — | ✅ 正确 |
+| 安全 | CORS 配置缺失 | 中 | ✅ 已添加 |
+| 安全 | 数据库 SSL 关闭 | 中 | ✅ 已修复 |
+| 安全 | Controller 直接使用 Entity | 低 | ⚠️ 建议 |
+| 性能 | 缺少数据库索引 | **高** | ✅ 已提供 SQL |
+| 性能 | SELECT * 返回大字段 | 中 | ✅ 已优化 |
+| 性能 | 更新/删除双查询 | 中 | ✅ 已提供方法 |
+| 性能 | 缓存建议 | 低 | ⚠️ 建议 |
+| 规范 | 包名拼写 + 重复包 | **高** | ✅ 已清理 |
+| 规范 | System.out.println | **高** | ✅ 已替换 |
+| 规范 | 缺少统一响应类 | **高** | ✅ 已创建 |
+| 规范 | 返回值类型不统一 | 中 | ✅ 已统一 |
+| 规范 | 访问修饰符缺失 | 中 | ✅ 已修复 |
+| 规范 | 缺少参数校验 | 中 | ✅ 已添加 |
+| 规范 | TestController 残留 | 低 | ✅ 已删除 |
+| 运维 | 缺少全局异常处理 | **高** | ✅ 已创建 |
+| 运维 | 数据库密码环境变量 | — | ✅ 正确 |
+| 运维 | JWT 密钥环境变量 | 中 | ✅ 已修复 |
+| 运维 | Actuator 监控 | 中 | ✅ 已添加 |
+| 运维 | 认证拦截器建议 | 低 | ⚠️ 建议 |
 
 ---
 
-> **淇鍘嗗彶锛?* 2026-06-24 鈥?鍏ㄩ潰瀹℃煡骞朵慨澶嶆墍鏈夐珮/涓闄╅棶棰樸€?
+> **修订历史：** 2026-06-24 — 全面审查并修复所有高/中风险问题。
