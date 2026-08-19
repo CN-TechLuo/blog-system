@@ -7,6 +7,7 @@ import com.blog.blogsystem.entity.Feedback;
 import com.blog.blogsystem.mapper.FeedbackMapper;
 import com.blog.blogsystem.service.FeedbackService;
 import com.blog.blogsystem.util.PageUtil;
+import com.blog.blogsystem.util.SensitiveWordFilter;
 import com.blog.blogsystem.util.XssUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +30,10 @@ public class FeedbackServiceImpl implements FeedbackService {
     @Override
     @Transactional
     public ApiResponse<Long> create(Integer userId, FeedbackCreateRequest request) {
+        if (SensitiveWordFilter.containsSensitive(request.getTitle())
+                || SensitiveWordFilter.containsSensitive(request.getContent())) {
+            return ApiResponse.fail("反馈内容包含违规词汇，请修改后重试");
+        }
         Feedback feedback = new Feedback();
         feedback.setUserId(userId);
         feedback.setTitle(XssUtil.escape(request.getTitle()));

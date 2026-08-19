@@ -20,6 +20,8 @@ public class User {
     private String email;
     private String phone;
     private String role;
+    private Integer failedAttempts;
+    private LocalDateTime lockedUntil;
     private String avatarUrl;
     private Integer tokenVersion;
     private LocalDateTime createTime;

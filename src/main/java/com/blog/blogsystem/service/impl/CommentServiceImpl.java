@@ -10,6 +10,7 @@ import com.blog.blogsystem.mapper.CommentMapper;
 import com.blog.blogsystem.mapper.UserMapper;
 import com.blog.blogsystem.service.CommentService;
 import com.blog.blogsystem.util.PageUtil;
+import com.blog.blogsystem.util.SensitiveWordFilter;
 import com.blog.blogsystem.util.XssUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,9 @@ public class CommentServiceImpl implements CommentService {
     @Override
     @Transactional
     public ApiResponse<Long> create(Integer articleId, Integer userId, CommentCreateRequest request) {
+        if (SensitiveWordFilter.containsSensitive(request.getContent())) {
+            return ApiResponse.fail("评论包含违规词汇，请修改后重试");
+        }
         String safeContent = XssUtil.sanitizeHtml(request.getContent());
         if (safeContent.isBlank()) {
             return ApiResponse.fail("评论内容不能为空");

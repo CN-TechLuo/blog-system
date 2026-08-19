@@ -14,9 +14,12 @@ import com.blog.blogsystem.mapper.NotificationMapper;
 import com.blog.blogsystem.mapper.UserMapper;
 import com.blog.blogsystem.service.ArticleService;
 import com.blog.blogsystem.util.PageUtil;
+import com.blog.blogsystem.util.SensitiveWordFilter;
 import com.blog.blogsystem.util.XssUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,21 +58,29 @@ public class ArticleServiceImpl implements ArticleService {
     private final LikeMapper likeMapper;
     private final BookmarkMapper bookmarkMapper;
     private final NotificationMapper notificationMapper;
+    private final CacheManager cacheManager;
 
     public ArticleServiceImpl(ArticleMapper articleMapper, UserMapper userMapper,
                               CommentMapper commentMapper, LikeMapper likeMapper,
-                              BookmarkMapper bookmarkMapper, NotificationMapper notificationMapper) {
+                              BookmarkMapper bookmarkMapper, NotificationMapper notificationMapper,
+                              CacheManager cacheManager) {
         this.articleMapper = articleMapper;
         this.userMapper = userMapper;
         this.commentMapper = commentMapper;
         this.likeMapper = likeMapper;
         this.bookmarkMapper = bookmarkMapper;
         this.notificationMapper = notificationMapper;
+        this.cacheManager = cacheManager;
     }
 
     @Override
     @Transactional
     public ApiResponse<Long> create(ArticleCreateRequest request, Integer userId) {
+        if (SensitiveWordFilter.containsSensitive(request.getTitle())
+                || SensitiveWordFilter.containsSensitive(request.getContent())) {
+            log.warn("内容审核拦截: userId={}, title 命中敏感词", userId);
+            return ApiResponse.fail("内容包含违规词汇，请修改后重试");
+        }
         Article article = new Article();
         article.setTitle(XssUtil.escape(request.getTitle()));
         article.setContent(XssUtil.sanitizeHtml(request.getContent()));
@@ -78,6 +89,7 @@ public class ArticleServiceImpl implements ArticleService {
         int rows = articleMapper.insert(article);
 
         if (rows > 0) {
+            evictHotFeedCache();
             log.info("文章发布成功: id={}, title={}, userId={}", article.getId(), request.getTitle(), userId);
             return ApiResponse.success("发布成功", (long) article.getId());
         }
@@ -127,6 +139,10 @@ public class ArticleServiceImpl implements ArticleService {
     @Override
     @Transactional
     public ApiResponse<Void> update(ArticleUpdateRequest request, Integer userId) {
+        if (SensitiveWordFilter.containsSensitive(request.getTitle())
+                || SensitiveWordFilter.containsSensitive(request.getContent())) {
+            return ApiResponse.fail("内容包含违规词汇，请修改后重试");
+        }
         Article article = new Article();
         article.setId(request.getId());
         article.setTitle(XssUtil.escape(request.getTitle()));
@@ -136,6 +152,7 @@ public class ArticleServiceImpl implements ArticleService {
         int rows = articleMapper.updateByAuthor(article);
 
         if (rows > 0) {
+            evictHotFeedCache();
             log.info("文章编辑成功: id={}", request.getId());
             return ApiResponse.success("编辑成功");
         }
@@ -151,6 +168,7 @@ public class ArticleServiceImpl implements ArticleService {
             bookmarkMapper.deleteByArticleId(id);
             commentMapper.deleteByArticleId(id);
             notificationMapper.deleteByArticleId(id);
+            evictHotFeedCache();
             log.info("文章删除成功: id={}", id);
             return ApiResponse.success("删除成功");
         }
@@ -212,11 +230,28 @@ public class ArticleServiceImpl implements ArticleService {
         int p = PageUtil.page(page);
         int size = PageUtil.pageSize(pageSize, 50);
         int start = PageUtil.start(p, size);
-        List<Article> articles = articleMapper.findHotFeed(start, size);
-        populateAuthorNames(articles);
+
+        // 热榜列表缓存 60 秒；社交状态（点赞/收藏）属 viewer 私有，不进缓存
+        Cache cache = cacheManager.getCache("hotFeed");
+        String cacheKey = p + ":" + size;
+        @SuppressWarnings("unchecked")
+        List<Article> articles = cache != null ? cache.get(cacheKey, List.class) : null;
+        if (articles == null) {
+            articles = articleMapper.findHotFeed(start, size);
+            populateAuthorNames(articles);
+            if (cache != null) cache.put(cacheKey, articles);
+        }
+
         populateSocialState(articles, viewerId);
         int total = articleMapper.count();
         return ApiResponse.success("查询成功", new PageResponse(articles, total, size, p));
+    }
+
+    private void evictHotFeedCache() {
+        try {
+            Cache cache = cacheManager.getCache("hotFeed");
+            if (cache != null) cache.clear();
+        } catch (Exception ignored) {}
     }
 
     private void populateSocialState(List<Article> articles, Integer viewerId) {

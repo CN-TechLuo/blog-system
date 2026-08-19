@@ -1,5 +1,6 @@
 package com.blog.blogsystem.config;
 
+import com.blog.blogsystem.service.TokenBlacklistService;
 import com.blog.blogsystem.util.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,11 +15,18 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * - 非 GET 的受保护路径：必须携带有效 token，否则拒绝
  * - /api/article/** 的 GET 请求：公开放行；若携带有效 token 则解析出
  *   userId 存入 request attribute（用于点赞/收藏状态回显），无效则忽略
+ * - 登出后 jti 进入黑名单的 token 一律拒绝
  */
 @Component
 public class AuthInterceptor implements HandlerInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(AuthInterceptor.class);
+
+    private final TokenBlacklistService tokenBlacklistService;
+
+    public AuthInterceptor(TokenBlacklistService tokenBlacklistService) {
+        this.tokenBlacklistService = tokenBlacklistService;
+    }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -33,9 +41,12 @@ public class AuthInterceptor implements HandlerInterceptor {
                 && !protectedFeed) {
             String authHeader = request.getHeader("Authorization");
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                Integer viewerId = JwtUtil.getUserIdFromToken(authHeader.substring(7));
-                if (viewerId != null) {
-                    request.setAttribute("userId", viewerId);
+                String token = authHeader.substring(7);
+                if (!isBlacklisted(token)) {
+                    Integer viewerId = JwtUtil.getUserIdFromToken(token);
+                    if (viewerId != null) {
+                        request.setAttribute("userId", viewerId);
+                    }
                 }
             }
             return true;
@@ -53,8 +64,17 @@ public class AuthInterceptor implements HandlerInterceptor {
             log.debug("Token 无效或已过期: {} {}", request.getMethod(), request.getRequestURI());
             throw new AuthenticationException(HttpStatus.UNAUTHORIZED, "token 无效或已过期");
         }
+        if (isBlacklisted(token)) {
+            log.debug("Token 已登出吊销: {} {}", request.getMethod(), request.getRequestURI());
+            throw new AuthenticationException(HttpStatus.UNAUTHORIZED, "token 已失效，请重新登录");
+        }
 
         request.setAttribute("userId", userId);
         return true;
+    }
+
+    private boolean isBlacklisted(String token) {
+        String jti = JwtUtil.getJtiFromToken(token);
+        return jti != null && tokenBlacklistService.isBlacklisted(jti);
     }
 }
