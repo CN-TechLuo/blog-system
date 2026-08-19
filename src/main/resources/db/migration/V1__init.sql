@@ -17,8 +17,6 @@ CREATE TABLE IF NOT EXISTS `user` (
   `email` VARCHAR(100) DEFAULT NULL,
   `phone` VARCHAR(11) DEFAULT NULL,
   `role` VARCHAR(20) DEFAULT 'user',
-  `failed_attempts` INT DEFAULT 0 NOT NULL,
-  `locked_until` DATETIME DEFAULT NULL,
   `token_version` INT DEFAULT 0 NOT NULL,
   `avatar_url` VARCHAR(500) DEFAULT NULL,
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -198,32 +196,6 @@ CREATE TABLE IF NOT EXISTS `site_config` (
 
 INSERT INTO `site_config` (`id`, `contact_email`) VALUES (1, '')
 ON DUPLICATE KEY UPDATE `id` = `id`;
-
--- ============================================================
--- 13. JWT 黑名单（登出吊销）
--- ============================================================
-CREATE TABLE IF NOT EXISTS `token_blacklist` (
-  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-  `jti` VARCHAR(64) NOT NULL,
-  `expire_time` DATETIME NOT NULL,
-  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE INDEX `uk_jti` (`jti`),
-  INDEX `idx_expire` (`expire_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='JWT 黑名单';
-
--- ============================================================
--- 14. AI 调用用量记录
--- ============================================================
-CREATE TABLE IF NOT EXISTS `ai_usage` (
-  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-  `user_id` INT NOT NULL,
-  `api_type` VARCHAR(32) NOT NULL,
-  `input_chars` INT DEFAULT 0,
-  `output_chars` INT DEFAULT 0,
-  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  INDEX `idx_user_time` (`user_id`, `create_time`),
-  INDEX `idx_create_time` (`create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI 调用用量记录';
 
 -- ============================================================
 -- 初始化完成

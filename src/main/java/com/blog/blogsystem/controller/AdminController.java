@@ -2,6 +2,7 @@ package com.blog.blogsystem.controller;
 
 import com.blog.blogsystem.dto.ApiResponse;
 import com.blog.blogsystem.dto.PageResponse;
+import com.blog.blogsystem.entity.AiUsage;
 import com.blog.blogsystem.entity.User;
 import com.blog.blogsystem.mapper.ArticleMapper;
 import com.blog.blogsystem.mapper.BookmarkMapper;
@@ -12,6 +13,7 @@ import com.blog.blogsystem.mapper.LikeMapper;
 import com.blog.blogsystem.mapper.NotificationMapper;
 import com.blog.blogsystem.mapper.PasswordResetTokenMapper;
 import com.blog.blogsystem.mapper.UserMapper;
+import com.blog.blogsystem.service.AiUsageService;
 import com.blog.blogsystem.service.SiteConfigService;
 import com.blog.blogsystem.util.AuditLogger;
 import com.blog.blogsystem.util.PageUtil;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -56,6 +59,7 @@ public class AdminController {
     private final NotificationMapper notificationMapper;
     private final PasswordResetTokenMapper tokenMapper;
     private final SiteConfigService siteConfigService;
+    private final AiUsageService aiUsageService;
 
     @Value("${admin.bootstrap-username:admin}")
     private String bootstrapUsername;
@@ -68,7 +72,8 @@ public class AdminController {
                            CommentMapper commentMapper, FeedbackMapper feedbackMapper,
                            LikeMapper likeMapper, BookmarkMapper bookmarkMapper,
                            FollowMapper followMapper, NotificationMapper notificationMapper,
-                           PasswordResetTokenMapper tokenMapper, SiteConfigService siteConfigService) {
+                           PasswordResetTokenMapper tokenMapper, SiteConfigService siteConfigService,
+                           AiUsageService aiUsageService) {
         this.userMapper = userMapper;
         this.articleMapper = articleMapper;
         this.commentMapper = commentMapper;
@@ -79,6 +84,7 @@ public class AdminController {
         this.notificationMapper = notificationMapper;
         this.tokenMapper = tokenMapper;
         this.siteConfigService = siteConfigService;
+        this.aiUsageService = aiUsageService;
     }
 
     @PostConstruct
@@ -246,6 +252,14 @@ public class AdminController {
         AuditLogger.log("ADMIN_SET_CONTACT_EMAIL", "operatorId=" + request.getAttribute("userId")
                 + ", email=" + (email.isEmpty() ? "(清空)" : email));
         return ResponseEntity.ok(ApiResponse.success("设置成功"));
+    }
+
+    @GetMapping("/ai-usage")
+    @Operation(summary = "AI 调用用量记录")
+    public ResponseEntity<ApiResponse<List<AiUsage>>> aiUsage(HttpServletRequest request,
+                                                              @RequestParam(defaultValue = "50") int limit) {
+        if (!checkAdmin(request)) return ResponseEntity.status(403).body(ApiResponse.fail("无权限"));
+        return ResponseEntity.ok(ApiResponse.success("查询成功", aiUsageService.recent(limit)));
     }
 
     @PutMapping("/set-admin/{userId}")

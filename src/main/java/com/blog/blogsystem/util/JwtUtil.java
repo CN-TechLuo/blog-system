@@ -84,6 +84,7 @@ public class JwtUtil {
         return Jwts.builder()
                 .issuer(ISSUER)
                 .audience().add(AUDIENCE).and()
+                .id(java.util.UUID.randomUUID().toString())
                 .subject(username)
                 .claim("userId", userId)
                 .claim("tokenVersion", tokenVersion)
@@ -96,6 +97,22 @@ public class JwtUtil {
     public static String getUsernameFromToken(String token) {
         try {
             return parseToken(token).getSubject();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String getJtiFromToken(String token) {
+        try {
+            return parseToken(token).getId();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static java.util.Date getExpirationFromToken(String token) {
+        try {
+            return parseToken(token).getExpiration();
         } catch (Exception e) {
             return null;
         }

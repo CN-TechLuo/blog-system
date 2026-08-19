@@ -27,7 +27,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
-      - name: Initialize database schema
+      - name: Wait for MySQL
         run: |
           for i in $(seq 1 30); do
             if mysql -h 127.0.0.1 -u root -p${{ secrets.CI_DB_PASSWORD || 'ci-db-password' }} -e "SELECT 1" > /dev/null 2>&1; then
@@ -37,8 +37,7 @@ jobs:
             echo "Waiting for MySQL... ($i/30)"
             sleep 2
           done
-          mysql -h 127.0.0.1 -u root -p${{ secrets.CI_DB_PASSWORD || 'ci-db-password' }} < src/main/resources/db/schema.sql
-      - name: Build and test with Maven
+      - name: Build and test with Maven (Flyway auto-migrates schema)
         run: ./mvnw verify
         env:
           DB_USERNAME: root

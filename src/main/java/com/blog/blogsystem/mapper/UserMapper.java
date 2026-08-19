@@ -64,6 +64,15 @@ public interface UserMapper {
     @Update("UPDATE user SET role = #{role} WHERE id = #{id}")
     int updateRole(@Param("id") Integer id, @Param("role") String role);
 
+    @Update("UPDATE user SET failed_attempts = failed_attempts + 1 WHERE id = #{id}")
+    int incrementFailedAttempts(@Param("id") Integer id);
+
+    @Update("UPDATE user SET locked_until = #{lockedUntil}, failed_attempts = 0 WHERE id = #{id}")
+    int lockUser(@Param("id") Integer id, @Param("lockedUntil") java.time.LocalDateTime lockedUntil);
+
+    @Update("UPDATE user SET failed_attempts = 0, locked_until = NULL WHERE id = #{id}")
+    int clearFailedAttempts(@Param("id") Integer id);
+
     @Select("SELECT COUNT(*) FROM user WHERE role = 'admin'")
     int countAdmins();
 

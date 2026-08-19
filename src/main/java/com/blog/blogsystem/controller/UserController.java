@@ -11,8 +11,12 @@ import com.blog.blogsystem.dto.RegisterRequest;
 import com.blog.blogsystem.dto.UserInfoResponse;
 import com.blog.blogsystem.entity.User;
 import com.blog.blogsystem.mapper.UserMapper;
+import com.blog.blogsystem.service.TokenBlacklistService;
 import com.blog.blogsystem.service.UserService;
+import com.blog.blogsystem.util.AuditLogger;
 import com.blog.blogsystem.util.ImageUtil;
+import com.blog.blogsystem.util.JwtUtil;
+import com.blog.blogsystem.util.SensitiveWordFilter;
 import com.blog.blogsystem.util.XssUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -44,10 +48,13 @@ public class UserController {
 
     private final UserService userService;
     private final UserMapper userMapper;
+    private final TokenBlacklistService tokenBlacklistService;
 
-    public UserController(UserService userService, UserMapper userMapper) {
+    public UserController(UserService userService, UserMapper userMapper,
+                          TokenBlacklistService tokenBlacklistService) {
         this.userService = userService;
         this.userMapper = userMapper;
+        this.tokenBlacklistService = tokenBlacklistService;
     }
 
     @PostMapping("/register")
@@ -73,6 +80,25 @@ public class UserController {
     public ResponseEntity<ApiResponse<RefreshTokenResponse>> refresh(@RequestBody RefreshTokenRequest request) {
         ApiResponse<RefreshTokenResponse> result = userService.refreshToken(request);
         return ResponseEntity.status(result.isSuccess() ? 200 : 401).body(result);
+    }
+
+    @PostMapping("/logout")
+    @Operation(summary = "退出登录（吊销当前 token）")
+    public ResponseEntity<ApiResponse<Void>> logout(@RequestAttribute("userId") Integer userId,
+                                                    HttpServletRequest httpRequest) {
+        String authHeader = httpRequest.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            String jti = JwtUtil.getJtiFromToken(token);
+            java.util.Date expiration = JwtUtil.getExpirationFromToken(token);
+            if (jti != null) {
+                tokenBlacklistService.blacklist(jti, expiration != null
+                        ? expiration.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
+                        : java.time.LocalDateTime.now().plusMinutes(30));
+            }
+        }
+        AuditLogger.log("LOGOUT", "userId=" + userId);
+        return ResponseEntity.ok(ApiResponse.success("已退出登录"));
     }
 
     @GetMapping("/me")
@@ -143,6 +169,9 @@ public class UserController {
     @Operation(summary = "修改昵称")
     public ResponseEntity<ApiResponse<Void>> updateNickname(@RequestAttribute("userId") Integer userId,
                                                              @Valid @RequestBody NicknameRequest request) {
+        if (SensitiveWordFilter.containsSensitive(request.getNickname())) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("昵称包含违规词汇"));
+        }
         userMapper.updateNickname(userId, XssUtil.escape(request.getNickname().trim()));
         return ResponseEntity.ok(ApiResponse.success("昵称修改成功"));
     }

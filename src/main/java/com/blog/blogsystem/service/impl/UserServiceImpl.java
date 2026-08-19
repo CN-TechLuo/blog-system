@@ -15,13 +15,14 @@ import com.blog.blogsystem.util.JwtUtil;
 import com.blog.blogsystem.util.MaskUtil;
 import com.blog.blogsystem.util.PasswordUtil;
 import com.blog.blogsystem.util.RateLimiterUtil;
+import com.blog.blogsystem.util.SensitiveWordFilter;
 import com.blog.blogsystem.util.XssUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.concurrent.ConcurrentHashMap;
+import java.time.LocalDateTime;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -37,13 +38,9 @@ public class UserServiceImpl implements UserService {
     private static final int MAX_REGISTER_PER_MINUTE = 3;
     private static final int MAX_REGISTER_PER_IP_MINUTE = 20;
 
-    /** 登录失败锁定：连续失败 5 次锁定 15 分钟（内存实现，重启后重置） */
+    /** 登录失败锁定：连续失败 5 次锁定 15 分钟（DB 持久化，重启不失效） */
     private static final int MAX_FAILED_ATTEMPTS = 5;
-    private static final long LOCK_DURATION_MS = 15 * 60 * 1000L;
-    /** 失败计数窗口：30 分钟内无新失败则清零 */
-    private static final long FAIL_WINDOW_MS = 30 * 60 * 1000L;
-    /** key=ip:account -> [failCount, lockUntil, lastFailAt] */
-    private static final ConcurrentHashMap<String, long[]> FAILED_LOGINS = new ConcurrentHashMap<>();
+    private static final int LOCK_MINUTES = 15;
 
     public UserServiceImpl(UserMapper userMapper) {
         this.userMapper = userMapper;
@@ -59,6 +56,11 @@ public class UserServiceImpl implements UserService {
         }
 
         log.debug("收到注册请求: username={}", request.getUsername());
+
+        if (SensitiveWordFilter.containsSensitive(request.getUsername())
+                || SensitiveWordFilter.containsSensitive(request.getNickname())) {
+            return ApiResponse.fail("用户名或昵称包含违规词汇");
+        }
 
         User existUser = userMapper.findByUsername(request.getUsername());
         if (existUser != null) {
@@ -95,14 +97,6 @@ public class UserServiceImpl implements UserService {
             return ApiResponse.fail("登录请求过于频繁，请稍后重试");
         }
 
-        String lockKey = clientIp + ":" + request.getUsername();
-        long[] record = FAILED_LOGINS.get(lockKey);
-        if (record != null && record[1] > System.currentTimeMillis()) {
-            long remainMin = Math.max(1, (record[1] - System.currentTimeMillis()) / 60000 + 1);
-            AuditLogger.log("LOGIN_LOCKED", "ip=" + clientIp + ", username=" + request.getUsername());
-            return ApiResponse.fail("连续失败次数过多，账号已锁定，请 " + remainMin + " 分钟后再试");
-        }
-
         log.debug("收到登录请求: username={}", request.getUsername());
 
         User user;
@@ -111,32 +105,37 @@ public class UserServiceImpl implements UserService {
         } else {
             user = userMapper.findByUsername(request.getUsername());
         }
-        if (user == null || !PasswordUtil.matches(request.getPassword(), user.getPassword())) {
-            long[] rec = FAILED_LOGINS.compute(lockKey, (k, v) -> {
-                long now = System.currentTimeMillis();
-                if (v == null) return new long[]{1, 0, now};
-                if (v[1] > 0) {
-                    // 锁定期内继续失败：计数保留
-                    if (v[1] < now) return new long[]{1, 0, now}; // 锁定期满，重新计数
-                    return new long[]{v[0] + 1, v[1], now};
-                }
-                // 未锁定：超过失败窗口则重新计数，否则累加
-                if (now - v[2] > FAIL_WINDOW_MS) return new long[]{1, 0, now};
-                return new long[]{v[0] + 1, 0, now};
-            });
-            String msg = "用户名或密码错误";
-            if (rec[0] >= MAX_FAILED_ATTEMPTS) {
-                rec[1] = System.currentTimeMillis() + LOCK_DURATION_MS;
-                msg = "连续失败次数过多，账号已锁定 15 分钟";
-                AuditLogger.log("ACCOUNT_LOCKED", "ip=" + clientIp + ", username=" + request.getUsername());
-            }
-            AuditLogger.log("LOGIN_FAIL", "ip=" + clientIp + ", username=" + request.getUsername()
-                    + ", failCount=" + rec[0]);
-            log.info("登录失败: username={}", request.getUsername());
-            return ApiResponse.fail(msg);
+
+        // 账号锁定检查（DB 持久化）
+        if (user != null && user.getLockedUntil() != null
+                && user.getLockedUntil().isAfter(LocalDateTime.now())) {
+            AuditLogger.log("LOGIN_LOCKED", "ip=" + clientIp + ", username=" + request.getUsername());
+            return ApiResponse.fail("连续失败次数过多，账号已锁定至 "
+                    + user.getLockedUntil().toString().replace('T', ' ') + "，请稍后再试");
         }
 
-        FAILED_LOGINS.remove(lockKey);
+        if (user == null || !PasswordUtil.matches(request.getPassword(), user.getPassword())) {
+            if (user != null) {
+                userMapper.incrementFailedAttempts(user.getId());
+                int attempts = (user.getFailedAttempts() == null ? 0 : user.getFailedAttempts()) + 1;
+                if (attempts >= MAX_FAILED_ATTEMPTS) {
+                    userMapper.lockUser(user.getId(), LocalDateTime.now().plusMinutes(LOCK_MINUTES));
+                    AuditLogger.log("ACCOUNT_LOCKED", "ip=" + clientIp + ", username=" + request.getUsername());
+                    return ApiResponse.fail("连续失败次数过多，账号已锁定 " + LOCK_MINUTES + " 分钟");
+                }
+                AuditLogger.log("LOGIN_FAIL", "ip=" + clientIp + ", username=" + request.getUsername()
+                        + ", failCount=" + attempts);
+            } else {
+                AuditLogger.log("LOGIN_FAIL", "ip=" + clientIp + ", username=" + request.getUsername()
+                        + ", reason=user_not_found");
+            }
+            log.info("登录失败: username={}", request.getUsername());
+            return ApiResponse.fail("用户名或密码错误");
+        }
+
+        if (user.getFailedAttempts() != null && user.getFailedAttempts() > 0) {
+            userMapper.clearFailedAttempts(user.getId());
+        }
 
         String accessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername());
         String refreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), user.getTokenVersion() != null ? user.getTokenVersion() : 0);
