@@ -1,0 +1,56 @@
+# 告警规则（Prometheus Alertmanager）
+groups:
+  - name: blog-service
+    rules:
+      - alert: InstanceDown
+        expr: up{job="blog-backend"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "后端实例不可用"
+          description: "{{ $labels.instance }} 已停止暴露指标超过 1 分钟"
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{job="blog-backend", status=~"5.."}[5m]))
+          / clamp_min(sum(rate(http_server_requests_seconds_count{job="blog-backend"}[5m])), 1) > 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "5xx 错误率超过 5%"
+          description: "最近 5 分钟接口错误率 {{ $value | humanizePercentage }}"
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_requests_seconds_bucket{job="blog-backend"}[5m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "P95 延迟超过 2 秒"
+          description: "95 分位响应时间 {{ $value }}s，请检查慢查询与依赖"
+
+      - alert: JvmMemoryHigh
+        expr: sum(jvm_memory_used_bytes{job="blog-backend", area="heap"})
+              / sum(jvm_memory_max_bytes{job="blog-backend", area="heap"}) > 0.9
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "JVM 堆内存使用超过 90%"
+          description: "堆内存使用率 {{ $value | humanizePercentage }}"
+
+      - alert: DbPoolExhausted
+        expr: hikaricp_connections_pending{job="blog-backend"} > 10
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "数据库连接池排队超过 10"
+          description: "HikariCP 等待连接数 {{ $value }}，可能存在慢 SQL"
+
+      - alert: High429Rate
+        expr: sum(rate(http_server_requests_seconds_count{job="blog-backend", status="429"}[5m])) > 10
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "限流触发频繁"
+          description: "429 速率 {{ $value }}/s，可能存在攻击或爬虫"

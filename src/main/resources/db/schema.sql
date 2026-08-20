@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS `article` (
   `share_count` INT DEFAULT 0,
   `hot_score` DOUBLE DEFAULT 0 NOT NULL,
   `cover_url` VARCHAR(500) DEFAULT NULL,
+  `ai_generated` TINYINT DEFAULT 0 NOT NULL COMMENT 'AI 生成标识 0=否 1=是',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_user_id` (`user_id`),
@@ -224,6 +225,24 @@ CREATE TABLE IF NOT EXISTS `ai_usage` (
   INDEX `idx_user_time` (`user_id`, `create_time`),
   INDEX `idx_create_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI 调用用量记录';
+
+-- ============================================================
+-- 15. 用户举报表（投诉举报闭环）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `report` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `reporter_id` INT NOT NULL,
+  `target_type` VARCHAR(16) NOT NULL COMMENT '举报对象: article | comment',
+  `target_id` INT NOT NULL,
+  `reason` VARCHAR(32) NOT NULL COMMENT '举报原因分类',
+  `detail` VARCHAR(500) DEFAULT NULL COMMENT '补充说明',
+  `status` VARCHAR(16) DEFAULT 'pending' COMMENT 'pending=待处理 resolved=已处理',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_status_time` (`status`, `create_time`),
+  INDEX `idx_target` (`target_type`, `target_id`),
+  INDEX `idx_reporter` (`reporter_id`),
+  CONSTRAINT `fk_report_reporter` FOREIGN KEY (`reporter_id`) REFERENCES `user`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户举报表';
 
 -- ============================================================
 -- 初始化完成

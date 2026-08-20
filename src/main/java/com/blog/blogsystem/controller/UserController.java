@@ -11,11 +11,14 @@ import com.blog.blogsystem.dto.RegisterRequest;
 import com.blog.blogsystem.dto.UserInfoResponse;
 import com.blog.blogsystem.entity.User;
 import com.blog.blogsystem.mapper.UserMapper;
+import com.blog.blogsystem.service.AccountService;
 import com.blog.blogsystem.service.TokenBlacklistService;
 import com.blog.blogsystem.service.UserService;
 import com.blog.blogsystem.util.AuditLogger;
 import com.blog.blogsystem.util.ImageUtil;
 import com.blog.blogsystem.util.JwtUtil;
+import com.blog.blogsystem.util.PasswordUtil;
+import com.blog.blogsystem.util.RoleConst;
 import com.blog.blogsystem.util.SensitiveWordFilter;
 import com.blog.blogsystem.util.XssUtil;
 import io.swagger.v3.oas.annotations.Operation;
@@ -49,12 +52,15 @@ public class UserController {
     private final UserService userService;
     private final UserMapper userMapper;
     private final TokenBlacklistService tokenBlacklistService;
+    private final AccountService accountService;
 
     public UserController(UserService userService, UserMapper userMapper,
-                          TokenBlacklistService tokenBlacklistService) {
+                          TokenBlacklistService tokenBlacklistService,
+                          AccountService accountService) {
         this.userService = userService;
         this.userMapper = userMapper;
         this.tokenBlacklistService = tokenBlacklistService;
+        this.accountService = accountService;
     }
 
     @PostMapping("/register")
@@ -190,6 +196,38 @@ public class UserController {
 
     private String getClientIp(HttpServletRequest request) {
         return request.getRemoteAddr();
+    }
+
+    @GetMapping("/export-data")
+    @Operation(summary = "导出个人数据（个保法可携带权）")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> exportData(@RequestAttribute("userId") Integer userId) {
+        Map<String, Object> data = accountService.exportData(userId);
+        if (data.isEmpty()) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("用户不存在"));
+        }
+        AuditLogger.log("DATA_EXPORT", "userId=" + userId);
+        return ResponseEntity.ok(ApiResponse.success("导出成功", data));
+    }
+
+    @PostMapping("/delete-account")
+    @Operation(summary = "注销账号（个保法删除权，需输入密码确认）")
+    public ResponseEntity<ApiResponse<Void>> deleteAccount(@RequestAttribute("userId") Integer userId,
+                                                            @RequestBody Map<String, String> body) {
+        User user = userMapper.findById(userId);
+        if (user == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("用户不存在"));
+        }
+        String password = body.getOrDefault("password", "");
+        if (!PasswordUtil.matches(password, user.getPassword())) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("密码错误，无法注销"));
+        }
+        if (RoleConst.ADMIN.equals(user.getRole()) && userMapper.countAdmins() <= 1) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("系统至少需要保留一名管理员，无法注销"));
+        }
+        String username = user.getUsername();
+        accountService.deleteAccount(userId);
+        AuditLogger.log("ACCOUNT_DELETE_REQUEST", "userId=" + userId + ", username=" + username);
+        return ResponseEntity.ok(ApiResponse.success("账号已注销，所有个人数据已删除"));
     }
 
 }

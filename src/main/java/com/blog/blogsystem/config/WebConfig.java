@@ -63,7 +63,10 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/admin/**")
                 .addPathPatterns("/api/user/nickname")
                 .addPathPatterns("/api/user/phone")
-                .addPathPatterns("/api/user/logout");
+                .addPathPatterns("/api/user/logout")
+                .addPathPatterns("/api/user/export-data")
+                .addPathPatterns("/api/user/delete-account")
+                .addPathPatterns("/api/report/**");
     }
 
 }

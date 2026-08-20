@@ -86,6 +86,7 @@ public class ArticleServiceImpl implements ArticleService {
         article.setContent(XssUtil.sanitizeHtml(request.getContent()));
         article.setUserId(userId);
         article.setCoverUrl(request.getCoverUrl());
+        article.setAiGenerated(Boolean.TRUE.equals(request.getAiGenerated()) ? 1 : 0);
         int rows = articleMapper.insert(article);
 
         if (rows > 0) {
@@ -149,6 +150,7 @@ public class ArticleServiceImpl implements ArticleService {
         article.setContent(XssUtil.sanitizeHtml(request.getContent()));
         article.setUserId(userId);
         article.setCoverUrl(request.getCoverUrl());
+        article.setAiGenerated(Boolean.TRUE.equals(request.getAiGenerated()) ? 1 : 0);
         int rows = articleMapper.updateByAuthor(article);
 
         if (rows > 0) {

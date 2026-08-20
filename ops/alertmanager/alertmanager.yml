@@ -1,0 +1,21 @@
+# Alertmanager 配置
+# 生产环境请替换 SMTP 与 webhook 地址（钉钉/飞书/企业微信告警群）
+route:
+  receiver: "default"
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: "default"
+    email_configs:
+      - to: "ops@example.com"
+        from: "alertmanager@example.com"
+        smarthost: "smtp.example.com:465"
+        auth_username: "alertmanager@example.com"
+        auth_password: "CHANGE_ME"
+        require_tls: true
+    webhook_configs:
+      - url: "https://oapi.example.com/alert-webhook"
+        send_resolved: true

@@ -5,20 +5,39 @@
 ## 0. 部署架构
 
 ```
-用户 → Nginx(TLS/WAF/限流) → 后端 8080 → MySQL 8
-         │
+用户 → Nginx(TLS/WAF/限流) → 后端(可多副本) → MySQL 8
+         │                        │
+         │                        ├── Redis（限流/多实例共享）
+         │                        └── Prometheus ← Alertmanager → 邮件/Webhook
          └── 前端静态资源(dist)
 ```
 
-## 1. 上线前检查清单
+## 1. 上线前检查清单（合规 + 技术门禁，全部勾选后方可公网上线）
 
-- [ ] 域名已备案（中国大陆服务器必须）
+### 合规类（缺一不可）
+
+- [ ] 域名已备案（ICP）+ 公安备案（公安互联网站备案）
+- [ ] 企业/主体资质：营业执照、等保二级测评（按所在地监管要求）
 - [ ] HTTPS 证书已配置（Let's Encrypt / 云厂商证书）
-- [ ] 生产密钥全部通过环境变量注入（JWT_SECRET ≥32 字节、DB 密码、DEEPSEEK_API_KEY）
-- [ ] SMTP 已配置并**实测**找回密码邮件可达
+- [ ] 用户协议/隐私政策页面已发布，注册页勾选同意；隐私政策已声明 **AI 数据处理与第三方大模型调用**
+- [ ] AI 生成内容标识已生效（文章发布页勾选「含 AI 生成内容」，详情页显著展示"AI 生成"）
+- [ ] 账号注销（个人中心 → 注销账号）与数据导出（个人中心 → 导出数据）已实测通过
+- [ ] 投诉举报闭环已实测：文章/评论举报 → 管理后台「举报管理」处置
+- [ ] 日志留存 ≥180 天（logback 已配置，需确认磁盘容量与备份策略）
+- [ ] 未成年人保护与投诉受理渠道在协议中说明
+
+### 技术类（缺一不可）
+
+- [ ] 生产密钥全部通过环境变量注入（JWT_SECRET ≥32 字节、DB 密码、DEEPSEEK_API_KEY），`.env` 不入库
+- [ ] SMTP 已配置并**实测**找回密码邮件可达（可用 `docker compose --profile smtp-test up maildev` 验证链路）
+- [ ] 图形验证码已启用（`CAPTCHA_ENABLED=true`），注册/登录实测校验
+- [ ] 多实例部署时 `RATE_LIMIT_STORE=redis` 且 redis 服务健康（单机可保持 memory）
+- [ ] Prometheus + Alertmanager 已接入并配置告警接收（邮件/Webhook），告警规则实测触发
+- [ ] 每日自动备份已运行（compose 内置 backup 服务或宿主机 crontab + `ops/backup.sh`），并完成一次**恢复演练**
+- [ ] 压测通过：`k6 run --vus 50 --duration 60s ops/k6/load-test.js`（p95 < 500ms、错误率 < 1%）
+- [ ] 渗透/安全自测完成：登录锁定、JWT 吊销、XSS、敏感词、越权（非 admin 访问管理接口 403）逐项复测
 - [ ] 内容审核词库（`sensitive-words.txt`）已按业务补充
 - [ ] 站点管理员邮箱已在管理后台配置
-- [ ] 用户协议/隐私政策页面已发布，注册页勾选同意
 - [ ] 监控告警已接入（Prometheus 抓取 `/actuator/prometheus`）
 
 ## 2. 构建与发布
@@ -56,22 +75,39 @@ docker compose -f docker-compose.prod.yml logs -f backend
 ## 5. 数据备份与恢复
 
 ```bash
-# 每日备份（建议配合计划任务：Windows 任务计划 / Linux crontab）
-# crontab 示例（Linux）: 0 3 * * * /app/ops/backup-db.sh /backup
+# 方式一：compose 内置备份服务（每日 02:30，保留 30 份，见 docker-compose.prod.yml backup 服务）
+# 方式二：宿主机脚本 + crontab
+# crontab 示例（Linux）: 30 2 * * * DB_PASSWORD=xxx /opt/blog/ops/backup.sh /opt/blog/backups >> /opt/blog/logs/backup.log 2>&1
+# 恢复: ./ops/restore.sh /backups/blog_db_20260820_023000.sql.gz
+
+# Windows PowerShell（宿主机）:
 powershell -File ops/backup-db.ps1 -BackupDir D:\backups
 
 # 备份文件必须加密后异地存储（Linux 示例）：
 tar czf - /backup | openssl enc -aes-256-cbc -salt -pbkdf2 -pass file:/root/.backup-pass -out backup-$(date +%F).tar.gz.enc
 
 # 恢复演练（至少每季度一次）：
-mysql -u root -p blog_db < backup-xxxx.sql
+./ops/restore.sh backup-xxxx.sql.gz
 ```
 
 ## 6. 监控告警
 
 - Prometheus 抓取 `http://<内网>:8080/actuator/prometheus`（JVM/HTTP/缓存指标）。
-- 必配告警：登录失败激增（audit.log 中 LOGIN_FAIL 计数）、429 突增、5xx 比例 >1%、磁盘/内存水位。
-- 日志：`logs/app.log`（业务）、`logs/audit.log`（安全审计，管理后台可查询）。
+- 告警规则（`ops/prometheus/alerts.yml`）：实例宕机、5xx>5%、P95>2s、堆内存>90%、连接池排队、429 突增。
+- Alertmanager 接收（`ops/alertmanager/alertmanager.yml`）：邮件 + Webhook（替换为钉钉/飞书/企业微信告警群）。
+- 日志：`logs/blog-system.log`（业务，留存 90 天）、`logs/audit.log`（安全审计，留存 180 天，管理后台可查询）。
+
+## 6.1 SMTP 链路测试（上线前必须执行）
+
+```bash
+# 启动测试邮箱服务（容器内 SMTP:1025，Web 界面:1080）
+docker compose -f docker-compose.prod.yml --profile smtp-test up -d maildev
+
+# 本地后端临时配置测试 SMTP（或直接给 backend 容器加环境变量）:
+#   SPRING_MAIL_HOST=localhost SPRING_MAIL_PORT=1025 SPRING_MAIL_USERNAME= SPRING_MAIL_PASSWORD=
+# 触发「忘记密码」→ 打开 http://localhost:1080 查看邮件是否到达 → 完成重置密码全链路
+# 验证完成后切换为真实 SMTP 并再次实测
+```
 
 ## 7. 上线后运维手册
 

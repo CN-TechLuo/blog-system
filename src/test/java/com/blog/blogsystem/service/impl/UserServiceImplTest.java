@@ -2,6 +2,7 @@ package com.blog.blogsystem.service.impl;
 
 import com.blog.blogsystem.entity.User;
 import com.blog.blogsystem.mapper.UserMapper;
+import com.blog.blogsystem.service.CaptchaService;
 import com.blog.blogsystem.service.TokenBlacklistService;
 import org.junit.jupiter.api.Test;
 
@@ -23,7 +24,8 @@ class UserServiceImplTest {
 
     private UserMapper mapper = mock(UserMapper.class);
     private TokenBlacklistService blacklistService = mock(TokenBlacklistService.class);
-    private UserServiceImpl service = new UserServiceImpl(mapper);
+    private CaptchaService captchaService = mock(CaptchaService.class);
+    private UserServiceImpl service = new UserServiceImpl(mapper, captchaService);
 
     @Test
     void changePasswordShouldRejectWrongOldPassword() {

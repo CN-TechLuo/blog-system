@@ -22,6 +22,8 @@ public class Article {
     private Integer shareCount;
     private Double hotScore;
     private String coverUrl;
+    /** AI 生成标识：1=含 AI 生成内容（前端显著标识，深度合成合规） */
+    private Integer aiGenerated;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 

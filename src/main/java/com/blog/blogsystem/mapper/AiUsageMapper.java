@@ -1,6 +1,7 @@
 package com.blog.blogsystem.mapper;
 
 import com.blog.blogsystem.entity.AiUsage;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -15,6 +16,9 @@ public interface AiUsageMapper {
             "VALUES (#{userId}, #{apiType}, #{inputChars}, #{outputChars})")
     int insert(@Param("userId") Integer userId, @Param("apiType") String apiType,
                @Param("inputChars") int inputChars, @Param("outputChars") int outputChars);
+
+    @Delete("DELETE FROM ai_usage WHERE user_id = #{userId}")
+    int deleteByUserId(@Param("userId") Integer userId);
 
     @Select("SELECT COUNT(*) FROM ai_usage WHERE user_id = #{userId} AND create_time >= CURDATE()")
     int countToday(@Param("userId") Integer userId);
