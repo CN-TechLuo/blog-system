@@ -26,4 +26,7 @@ public class ArticleUpdateRequest {
     @Pattern(regexp = "^(|/uploads/[A-Za-z0-9._-]+|https?://[\\w.-]+/.*)$", message = "封面URL格式不正确")
     private String coverUrl;
 
+    /** 是否含 AI 生成内容（深度合成合规标识） */
+    private Boolean aiGenerated;
+
 }

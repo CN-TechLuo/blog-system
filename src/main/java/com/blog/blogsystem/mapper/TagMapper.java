@@ -30,4 +30,7 @@ public interface TagMapper {
 
     @Select("SELECT name FROM tag WHERE name = #{name}")
     String findByName(@Param("name") String name);
+
+    @org.apache.ibatis.annotations.Delete("DELETE FROM article_tag WHERE article_id = #{articleId}")
+    int deleteArticleTags(@Param("articleId") Integer articleId);
 }

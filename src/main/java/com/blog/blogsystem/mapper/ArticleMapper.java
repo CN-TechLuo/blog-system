@@ -14,14 +14,16 @@ import java.util.List;
 @Mapper
 public interface ArticleMapper {
 
-    @Insert("INSERT INTO article (title, content, user_id, cover_url) VALUES (#{title}, #{content}, #{userId}, #{coverUrl})")
+    @Insert("INSERT INTO article (title, content, user_id, cover_url, ai_generated) " +
+            "VALUES (#{title}, #{content}, #{userId}, #{coverUrl}, COALESCE(#{aiGenerated}, 0))")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(Article article);
 
     @Select("SELECT * FROM article WHERE id = #{id}")
     Article findById(Integer id);
 
-    @Update("UPDATE article SET title = #{title}, content = #{content}, cover_url = #{coverUrl} WHERE id = #{id} AND user_id = #{userId}")
+    @Update("UPDATE article SET title = #{title}, content = #{content}, cover_url = #{coverUrl}, " +
+            "ai_generated = COALESCE(#{aiGenerated}, 0) WHERE id = #{id} AND user_id = #{userId}")
     int updateByAuthor(Article article);
 
     @Delete("DELETE FROM article WHERE id = #{id} AND user_id = #{userId}")
@@ -33,11 +35,11 @@ public interface ArticleMapper {
     @Select("SELECT COUNT(*) FROM article")
     int count();
 
-    @Select("SELECT id, title, user_id, view_count, like_count, bookmark_count, comment_count, share_count, cover_url, create_time, update_time " +
+    @Select("SELECT id, title, user_id, view_count, like_count, bookmark_count, comment_count, share_count, cover_url, ai_generated, create_time, update_time " +
             "FROM article ORDER BY create_time DESC LIMIT #{start}, #{pageSize}")
     List<Article> findByPage(@Param("start") int start, @Param("pageSize") int pageSize);
 
-    @Select("SELECT id, title, user_id, view_count, like_count, bookmark_count, comment_count, share_count, cover_url, create_time, update_time " +
+    @Select("SELECT id, title, user_id, view_count, like_count, bookmark_count, comment_count, share_count, cover_url, ai_generated, create_time, update_time " +
             "FROM article WHERE title LIKE CONCAT('%', #{keyword}, '%') " +
             "ORDER BY create_time DESC LIMIT #{start}, #{pageSize}")
     List<Article> searchByTitle(@Param("keyword") String keyword,
@@ -47,7 +49,7 @@ public interface ArticleMapper {
     @Select("SELECT COUNT(*) FROM article WHERE title LIKE CONCAT('%', #{keyword}, '%')")
     int countByKeyword(@Param("keyword") String keyword);
 
-    @Select("SELECT id, title, user_id, view_count, like_count, bookmark_count, comment_count, share_count, cover_url, create_time, update_time " +
+    @Select("SELECT id, title, user_id, view_count, like_count, bookmark_count, comment_count, share_count, cover_url, ai_generated, create_time, update_time " +
             "FROM article WHERE MATCH(title) AGAINST(#{keyword} IN NATURAL LANGUAGE MODE) " +
             "ORDER BY create_time DESC LIMIT #{start}, #{pageSize}")
     List<Article> searchByTitleFulltext(@Param("keyword") String keyword,
@@ -57,7 +59,7 @@ public interface ArticleMapper {
     @Select("SELECT COUNT(*) FROM article WHERE MATCH(title) AGAINST(#{keyword} IN NATURAL LANGUAGE MODE)")
     int countByKeywordFulltext(@Param("keyword") String keyword);
 
-    @Select("SELECT a.id, a.title, a.user_id, a.view_count, a.like_count, a.bookmark_count, a.comment_count, a.share_count, a.cover_url, a.create_time, a.update_time " +
+    @Select("SELECT a.id, a.title, a.user_id, a.view_count, a.like_count, a.bookmark_count, a.comment_count, a.share_count, a.cover_url, a.ai_generated, a.create_time, a.update_time " +
             "FROM article a INNER JOIN follow f ON a.user_id = f.followee_id " +
             "WHERE f.follower_id = #{userId} ORDER BY a.create_time DESC LIMIT #{start}, #{pageSize}")
     List<Article> findFollowingFeed(@Param("userId") Integer userId, @Param("start") int start, @Param("pageSize") int pageSize);
@@ -65,7 +67,7 @@ public interface ArticleMapper {
     @Select("SELECT COUNT(*) FROM article a INNER JOIN follow f ON a.user_id = f.followee_id WHERE f.follower_id = #{userId}")
     int countFollowingFeed(@Param("userId") Integer userId);
 
-    @Select("SELECT id, title, user_id, view_count, like_count, bookmark_count, comment_count, share_count, cover_url, create_time, update_time " +
+    @Select("SELECT id, title, user_id, view_count, like_count, bookmark_count, comment_count, share_count, cover_url, ai_generated, create_time, update_time " +
             "FROM article ORDER BY hot_score DESC, id DESC LIMIT #{start}, #{pageSize}")
     List<Article> findHotFeed(@Param("start") int start, @Param("pageSize") int pageSize);
 
@@ -98,5 +100,15 @@ public interface ArticleMapper {
 
     @Delete("DELETE FROM article WHERE user_id = #{userId}")
     int deleteByUserId(@Param("userId") Integer userId);
+
+    @Select("SELECT id FROM article WHERE user_id = #{userId}")
+    List<Integer> findIdsByUserId(@Param("userId") Integer userId);
+
+    @Select("SELECT id, title, view_count, like_count, comment_count, ai_generated, create_time " +
+            "FROM article WHERE user_id = #{userId} ORDER BY create_time DESC LIMIT #{limit}")
+    List<Article> findByUserId(@Param("userId") Integer userId, @Param("limit") int limit);
+
+    @Select("SELECT COUNT(*) FROM article WHERE user_id = #{userId}")
+    int countByUserId(@Param("userId") Integer userId);
 
 }

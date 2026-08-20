@@ -30,4 +30,10 @@ public class RegisterRequest {
 
     @Email(message = "邮箱格式不正确")
     private String email;
+
+    @Size(max = 64, message = "验证码ID不合法")
+    private String captchaId;
+
+    @Size(max = 16, message = "验证码答案不合法")
+    private String captchaAnswer;
 }

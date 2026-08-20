@@ -1,10 +1,11 @@
 version: "3.8"
 
-# 生产环境编排示例：MySQL 8 + 后端 + Nginx（含前端静态资源）
+# 生产环境编排示例：MySQL 8 + Redis + 后端 + Nginx（含前端静态资源）+ 监控告警
 # 使用前：
 #   1. 前端执行 npm run build 生成 dist/
 #   2. 复制 .env.example 为 .env 并填写全部密钥
 #   3. docker compose -f docker-compose.prod.yml up -d
+#   4. 验证: curl http://localhost:9090/-/healthy （Prometheus）
 
 services:
   mysql:
@@ -27,12 +28,28 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: blog-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    networks: [blog-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   backend:
     build: .
     container_name: blog-backend
     restart: unless-stopped
     depends_on:
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/blog_db?useSSL=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8
@@ -43,6 +60,9 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://blog.example.com}
       RESET_PASSWORD_URL: ${RESET_PASSWORD_URL:-https://blog.example.com/reset-password}
       ADMIN_BOOTSTRAP_ENABLED: "false"
+      RATE_LIMIT_STORE: redis
+      REDIS_HOST: redis
+      CAPTCHA_ENABLED: "true"
       TZ: Asia/Shanghai
     security_opt: [no-new-privileges:true]
     read_only: true
@@ -68,8 +88,61 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     networks: [blog-net]
 
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: blog-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks: [blog-net]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: blog-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./ops/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks: [blog-net]
+
+  backup:
+    image: fradelg/mysql-cron-backup
+    container_name: blog-backup
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASS: ${DB_PASSWORD}
+      MYSQL_DB: blog_db
+      MYSQLDUMP_OPTS: --single-transaction --quick
+      MAX_BACKUPS: 30
+      CRON_TIME: "30 2 * * *"
+      INIT_BACKUP: "1"
+      TZ: Asia/Shanghai
+    volumes:
+      - backup-data:/backup
+    networks: [blog-net]
+
+  # SMTP 测试工具（仅测试找回密码邮件链路，生产用真实 SMTP 时勿启动）
+  maildev:
+    image: maildev/maildev
+    container_name: blog-maildev
+    restart: unless-stopped
+    profiles: ["smtp-test"]
+    ports:
+      - "1080:1080"
+      - "1025:1025"
+    networks: [blog-net]
+
 volumes:
   mysql-data:
+  redis-data:
+  prometheus-data:
+  backup-data:
   uploads-data:
   logs-data:
 

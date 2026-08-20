@@ -9,6 +9,7 @@ import com.blog.blogsystem.dto.RegisterRequest;
 import com.blog.blogsystem.dto.UserInfoResponse;
 import com.blog.blogsystem.entity.User;
 import com.blog.blogsystem.mapper.UserMapper;
+import com.blog.blogsystem.service.CaptchaService;
 import com.blog.blogsystem.service.UserService;
 import com.blog.blogsystem.util.AuditLogger;
 import com.blog.blogsystem.util.JwtUtil;
@@ -30,6 +31,7 @@ public class UserServiceImpl implements UserService {
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
 
     private final UserMapper userMapper;
+    private final CaptchaService captchaService;
 
     /** 登录限流：单账号 5 次/分钟，单 IP 30 次/分钟（缓解反代共享 IP 误伤） */
     private static final int MAX_LOGIN_PER_MINUTE = 5;
@@ -42,13 +44,17 @@ public class UserServiceImpl implements UserService {
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final int LOCK_MINUTES = 15;
 
-    public UserServiceImpl(UserMapper userMapper) {
+    public UserServiceImpl(UserMapper userMapper, CaptchaService captchaService) {
         this.userMapper = userMapper;
+        this.captchaService = captchaService;
     }
 
     @Override
     @Transactional
     public ApiResponse<Object> register(RegisterRequest request, String clientIp) {
+        if (!captchaService.verify(request.getCaptchaId(), request.getCaptchaAnswer())) {
+            return ApiResponse.fail("验证码错误或已过期");
+        }
         if (RateLimiterUtil.isBlocked("reg:ip:" + clientIp, MAX_REGISTER_PER_IP_MINUTE)
                 || RateLimiterUtil.isBlocked("reg:acc:" + clientIp + ":" + request.getUsername(), MAX_REGISTER_PER_MINUTE)) {
             log.warn("注册速率限制触发: IP={}, username={}", clientIp, request.getUsername());
@@ -91,6 +97,9 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public ApiResponse<RefreshTokenResponse> login(LoginRequest request, String clientIp) {
+        if (!captchaService.verify(request.getCaptchaId(), request.getCaptchaAnswer())) {
+            return ApiResponse.fail("验证码错误或已过期");
+        }
         if (RateLimiterUtil.isBlocked("login:ip:" + clientIp, MAX_LOGIN_PER_IP_MINUTE)
                 || RateLimiterUtil.isBlocked("login:acc:" + clientIp + ":" + request.getUsername(), MAX_LOGIN_PER_MINUTE)) {
             log.warn("登录速率限制触发: IP={}, username={}", clientIp, request.getUsername());

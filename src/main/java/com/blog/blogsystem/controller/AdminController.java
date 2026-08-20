@@ -3,6 +3,7 @@ package com.blog.blogsystem.controller;
 import com.blog.blogsystem.dto.ApiResponse;
 import com.blog.blogsystem.dto.PageResponse;
 import com.blog.blogsystem.entity.AiUsage;
+import com.blog.blogsystem.entity.Report;
 import com.blog.blogsystem.entity.User;
 import com.blog.blogsystem.mapper.ArticleMapper;
 import com.blog.blogsystem.mapper.BookmarkMapper;
@@ -12,6 +13,8 @@ import com.blog.blogsystem.mapper.FollowMapper;
 import com.blog.blogsystem.mapper.LikeMapper;
 import com.blog.blogsystem.mapper.NotificationMapper;
 import com.blog.blogsystem.mapper.PasswordResetTokenMapper;
+import com.blog.blogsystem.mapper.ReportMapper;
+import com.blog.blogsystem.mapper.TagMapper;
 import com.blog.blogsystem.mapper.UserMapper;
 import com.blog.blogsystem.service.AiUsageService;
 import com.blog.blogsystem.service.SiteConfigService;
@@ -58,6 +61,8 @@ public class AdminController {
     private final FollowMapper followMapper;
     private final NotificationMapper notificationMapper;
     private final PasswordResetTokenMapper tokenMapper;
+    private final ReportMapper reportMapper;
+    private final TagMapper tagMapper;
     private final SiteConfigService siteConfigService;
     private final AiUsageService aiUsageService;
 
@@ -72,7 +77,8 @@ public class AdminController {
                            CommentMapper commentMapper, FeedbackMapper feedbackMapper,
                            LikeMapper likeMapper, BookmarkMapper bookmarkMapper,
                            FollowMapper followMapper, NotificationMapper notificationMapper,
-                           PasswordResetTokenMapper tokenMapper, SiteConfigService siteConfigService,
+                           PasswordResetTokenMapper tokenMapper, ReportMapper reportMapper,
+                           TagMapper tagMapper, SiteConfigService siteConfigService,
                            AiUsageService aiUsageService) {
         this.userMapper = userMapper;
         this.articleMapper = articleMapper;
@@ -83,6 +89,8 @@ public class AdminController {
         this.followMapper = followMapper;
         this.notificationMapper = notificationMapper;
         this.tokenMapper = tokenMapper;
+        this.reportMapper = reportMapper;
+        this.tagMapper = tagMapper;
         this.siteConfigService = siteConfigService;
         this.aiUsageService = aiUsageService;
     }
@@ -295,5 +303,63 @@ public class AdminController {
         AuditLogger.log("ADMIN_REVOKE", "operatorId=" + request.getAttribute("userId")
                 + ", targetUserId=" + userId + ", targetUsername=" + target.getUsername());
         return ResponseEntity.ok(ApiResponse.success("已撤销管理员权限"));
+    }
+
+    @GetMapping("/reports")
+    @Operation(summary = "举报列表（分页，可按状态筛选）")
+    public ResponseEntity<ApiResponse<PageResponse>> reports(HttpServletRequest request,
+                                                              @RequestParam(defaultValue = "1") int page,
+                                                              @RequestParam(defaultValue = "20") int pageSize,
+                                                              @RequestParam(required = false) String status) {
+        if (!checkAdmin(request)) return ResponseEntity.status(403).body(ApiResponse.fail("无权限"));
+        String s = (status == null || status.isBlank()) ? null : status.trim();
+        if (s != null && !Set.of("pending", "resolved").contains(s)) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("非法的状态筛选"));
+        }
+        int p = PageUtil.page(page);
+        int size = PageUtil.pageSize(pageSize, 100);
+        List<Report> list = reportMapper.findByPage(s, PageUtil.start(p, size), size);
+        list.forEach(r -> {
+            if (r.getTargetContent() != null && r.getTargetContent().length() > 100) {
+                r.setTargetContent(r.getTargetContent().substring(0, 100) + "...");
+            }
+        });
+        return ResponseEntity.ok(ApiResponse.success("查询成功",
+                new PageResponse(list, reportMapper.countByStatus(s), size, p)));
+    }
+
+    @PostMapping("/reports/{id}/handle")
+    @Operation(summary = "处理举报（删除违规内容或驳回）")
+    @Transactional
+    public ResponseEntity<ApiResponse<Void>> handleReport(HttpServletRequest request,
+                                                           @PathVariable Integer id,
+                                                           @RequestBody Map<String, String> body) {
+        if (!checkAdmin(request)) return ResponseEntity.status(403).body(ApiResponse.fail("无权限"));
+        Report report = reportMapper.findById(id);
+        if (report == null) return ResponseEntity.badRequest().body(ApiResponse.fail("举报不存在"));
+        if ("resolved".equals(report.getStatus())) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("该举报已处理"));
+        }
+        String action = body.getOrDefault("action", "dismiss");
+        if ("delete_target".equals(action)) {
+            if ("article".equals(report.getTargetType())) {
+                Integer articleId = report.getTargetId();
+                likeMapper.deleteByArticleId(articleId);
+                bookmarkMapper.deleteByArticleId(articleId);
+                commentMapper.deleteByArticleId(articleId);
+                notificationMapper.deleteByArticleId(articleId);
+                tagMapper.deleteArticleTags(articleId);
+                articleMapper.deleteByAdmin(articleId);
+            } else {
+                commentMapper.deleteByAdmin(report.getTargetId());
+            }
+        } else if (!"dismiss".equals(action)) {
+            return ResponseEntity.badRequest().body(ApiResponse.fail("非法的处理动作"));
+        }
+        reportMapper.markResolved(id);
+        AuditLogger.log("ADMIN_HANDLE_REPORT", "operatorId=" + request.getAttribute("userId")
+                + ", reportId=" + id + ", action=" + action + ", target="
+                + report.getTargetType() + ":" + report.getTargetId());
+        return ResponseEntity.ok(ApiResponse.success("处理完成"));
     }
 }

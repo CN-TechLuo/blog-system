@@ -37,6 +37,13 @@ public interface CommentMapper {
     @Delete("DELETE FROM comment WHERE user_id = #{userId}")
     int deleteByUserId(@Param("userId") Integer userId);
 
+    @Delete("DELETE FROM comment WHERE id = #{id}")
+    int deleteByAdmin(@Param("id") Integer id);
+
+    @Select("SELECT id, article_id, content, create_time FROM comment WHERE user_id = #{userId} " +
+            "ORDER BY create_time DESC LIMIT #{limit}")
+    List<Comment> findByUserId(@Param("userId") Integer userId, @Param("limit") int limit);
+
     @Delete("DELETE FROM comment WHERE article_id = #{articleId}")
     int deleteByArticleId(@Param("articleId") Integer articleId);
 

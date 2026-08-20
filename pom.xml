@@ -110,8 +110,8 @@
 
         <!-- 数据库版本迁移 -->
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -126,6 +126,12 @@
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!-- Redis（限流/多实例共享，可选：默认内存模式，RATE_LIMIT_STORE=redis 启用） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
         <!-- 邮件发送（找回密码，可选配置 SMTP，未配置时降级为响应返回） -->
