@@ -32,7 +32,10 @@ public class AiServiceImpl implements AiService {
     @Value("${deepseek.api-url:https://api.deepseek.com/v1/chat/completions}")
     private String apiUrl;
 
-    private static final String MODEL = "deepseek-chat";
+    /** 模型名可配置：兼容 OpenAI 协议的服务商（DeepSeek/Moonshot/通义/智谱等）切换时只需改 api-url + model */
+    @Value("${deepseek.model:deepseek-chat}")
+    private String model;
+
     private static final int MAX_TOKENS = 8192;
     private static final int CHUNK_CHARS = 18000;
 
@@ -110,7 +113,7 @@ public class AiServiceImpl implements AiService {
 
         List<Map<String, String>> messages = buildMessages(CHAT_SYSTEM_PROMPT, message, historyJson);
         String requestBody = MAPPER.writeValueAsString(Map.of(
-                "model", MODEL,
+                "model", model,
                 "messages", messages,
                 "max_tokens", MAX_TOKENS,
                 "temperature", 0.7,
@@ -269,7 +272,7 @@ public class AiServiceImpl implements AiService {
             List<Map<String, String>> messages = buildMessages(systemPrompt, userPrompt, historyJson);
 
             String requestBody = MAPPER.writeValueAsString(Map.of(
-                "model", MODEL,
+                "model", model,
                 "messages", messages,
                 "max_tokens", MAX_TOKENS,
                 "temperature", 0.7
