@@ -8,18 +8,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
-import java.util.Iterator;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 图形验证码（算术题 SVG，无第三方依赖）：
  * - 注册/登录前置校验，缓解撞库与批量注册
- * - 内存存储、单次有效、5 分钟过期、定时清理
+ * - 单次有效、5 分钟过期、定时清理
  * - app.captcha.enabled=false 时关闭校验（开发/内网环境）
- * 注意：多实例部署时需共享存储（Redis），否则各节点验证码互不识别；
- * 已接入限流存储抽象（RateLimitStore），验证码可随同升级为 Redis。
+ * - 存储可插拔（CaptchaStore）：单机内存 / Redis 多实例共享（CAPTCHA_STORE=redis）
  */
 @Service
 public class CaptchaService {
@@ -28,12 +24,14 @@ public class CaptchaService {
     private static final long TTL_MS = 5 * 60 * 1000L;
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private record Entry(String answer, long expireAt) {}
-
-    private final Map<String, Entry> store = new ConcurrentHashMap<>();
+    private final CaptchaStore store;
 
     @Value("${app.captcha.enabled:true}")
     private boolean enabled;
+
+    public CaptchaService(CaptchaStore captchaStore) {
+        this.store = captchaStore;
+    }
 
     /**
      * 生成验证码，返回 captchaId + SVG 字符串（前端直接渲染）
@@ -47,7 +45,7 @@ public class CaptchaService {
         String expression = a + " " + op + " " + b + " = ?";
 
         String id = UUID.randomUUID().toString().replace("-", "");
-        store.put(id, new Entry(String.valueOf(answer), System.currentTimeMillis() + TTL_MS));
+        store.put(id, String.valueOf(answer), TTL_MS);
 
         return new CaptchaResponse(id, renderSvg(expression), enabled);
     }
@@ -58,24 +56,13 @@ public class CaptchaService {
     public boolean verify(String captchaId, String answer) {
         if (!enabled) return true;
         if (captchaId == null || captchaId.isBlank() || answer == null || answer.isBlank()) return false;
-        Entry entry = store.remove(captchaId);
-        if (entry == null) return false;
-        if (System.currentTimeMillis() > entry.expireAt()) return false;
-        return entry.answer().equals(answer.trim());
+        String expected = store.take(captchaId);
+        return expected != null && expected.equals(answer.trim());
     }
 
     @Scheduled(fixedRate = 300_000)
     public void cleanExpired() {
-        long now = System.currentTimeMillis();
-        Iterator<Map.Entry<String, Entry>> it = store.entrySet().iterator();
-        int removed = 0;
-        while (it.hasNext()) {
-            if (now > it.next().getValue().expireAt()) {
-                it.remove();
-                removed++;
-            }
-        }
-        if (removed > 0) log.debug("验证码过期清理: {} 条", removed);
+        store.cleanExpired();
     }
 
     private String renderSvg(String expression) {

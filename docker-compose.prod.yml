@@ -19,6 +19,9 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_general_ci
+      - --slow-query-log=1
+      - --long-query-time=2
+      - --log-output=TABLE
     volumes:
       - mysql-data:/var/lib/mysql
     networks: [blog-net]
@@ -63,6 +66,7 @@ services:
       RATE_LIMIT_STORE: redis
       REDIS_HOST: redis
       CAPTCHA_ENABLED: "true"
+      CAPTCHA_STORE: redis
       TZ: Asia/Shanghai
     security_opt: [no-new-privileges:true]
     read_only: true

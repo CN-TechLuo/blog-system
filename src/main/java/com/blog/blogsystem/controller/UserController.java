@@ -103,7 +103,9 @@ public class UserController {
                         : java.time.LocalDateTime.now().plusMinutes(30));
             }
         }
-        AuditLogger.log("LOGOUT", "userId=" + userId);
+        // 吊销全部 refresh token（tokenVersion 递增使旧 refresh 全部失效，防止登出后被窃取的 refresh 继续换发新 token）
+        userMapper.incrementTokenVersion(userId);
+        AuditLogger.log("LOGOUT", "userId=" + userId + ", refreshTokens=revoked");
         return ResponseEntity.ok(ApiResponse.success("已退出登录"));
     }
 
@@ -148,8 +150,8 @@ public class UserController {
             if (ext == null) {
                 return ResponseEntity.badRequest().body(ApiResponse.fail("不支持的图片格式，仅支持 JPG/PNG/GIF/WEBP"));
             }
-            // 服务端重编码，剥离 polyglot 载荷
-            imageBytes = ImageUtil.sanitizeImage(imageBytes, ext);
+            // 服务端重编码，剥离 polyglot 载荷；头像长边限 512px
+            imageBytes = ImageUtil.sanitizeImage(imageBytes, ext, 512);
             File dir = new File("uploads");
             if (!dir.exists()) {
                 boolean created = dir.mkdirs();

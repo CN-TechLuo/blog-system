@@ -1,13 +1,16 @@
 package com.blog.blogsystem.util;
 
 import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 
 /**
- * 图片处理工具：格式识别 + 服务端重编码
- * 重编码可剥离图片尾部的 polyglot 载荷与 EXIF 隐藏数据，防止恶意文件绕过 magic bytes 检测
+ * 图片处理工具：格式识别 + 服务端重编码 + 按需降采样
+ * 重编码可剥离图片尾部的 polyglot 载荷与 EXIF 隐藏数据，防止恶意文件绕过 magic bytes 检测；
+ * 降采样可压缩超大封面/头像，降低存储与带宽成本
  */
 public final class ImageUtil {
 
@@ -36,6 +39,14 @@ public final class ImageUtil {
      * @throws IllegalArgumentException 图片无法解析或尺寸超限
      */
     public static byte[] sanitizeImage(byte[] bytes, String ext) {
+        return sanitizeImage(bytes, ext, 0);
+    }
+
+    /**
+     * 服务端重新编码图片，且长边超过 maxDimension 时按比例降采样（maxDimension<=0 表示不压缩）
+     * @throws IllegalArgumentException 图片无法解析或尺寸超限
+     */
+    public static byte[] sanitizeImage(byte[] bytes, String ext, int maxDimension) {
         if ("webp".equalsIgnoreCase(ext)) {
             return bytes;
         }
@@ -47,6 +58,9 @@ public final class ImageUtil {
             long pixels = (long) img.getWidth() * img.getHeight();
             if (img.getWidth() <= 0 || img.getHeight() <= 0 || pixels > MAX_PIXELS) {
                 throw new IllegalArgumentException("图片尺寸超限");
+            }
+            if (maxDimension > 0 && Math.max(img.getWidth(), img.getHeight()) > maxDimension) {
+                img = resize(img, maxDimension);
             }
             String format = "jpg".equalsIgnoreCase(ext) ? "jpg"
                     : "png".equalsIgnoreCase(ext) ? "png" : "gif";
@@ -60,6 +74,23 @@ public final class ImageUtil {
         } catch (Exception e) {
             throw new IllegalArgumentException("图片重编码失败", e);
         }
+    }
+
+    private static BufferedImage resize(BufferedImage src, int maxDimension) {
+        double scale = (double) maxDimension / Math.max(src.getWidth(), src.getHeight());
+        int w = Math.max(1, (int) Math.round(src.getWidth() * scale));
+        int h = Math.max(1, (int) Math.round(src.getHeight() * scale));
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = out.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.drawImage(src, 0, 0, w, h, null);
+        } finally {
+            g.dispose();
+        }
+        return out;
     }
 
 }

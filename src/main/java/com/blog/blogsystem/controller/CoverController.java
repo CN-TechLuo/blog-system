@@ -19,6 +19,8 @@ import java.util.UUID;
 public class CoverController {
 
     private static final long MAX_SIZE = 2 * 1024 * 1024;
+    /** 封面长边最大 1600px，超过按比例降采样（降低存储与带宽） */
+    private static final int COVER_MAX_DIMENSION = 1600;
 
     @PostMapping("/upload")
     public ResponseEntity<ApiResponse<String>> upload(@RequestAttribute("userId") Integer userId,
@@ -40,8 +42,8 @@ public class CoverController {
             if (ext == null) {
                 return ResponseEntity.badRequest().body(ApiResponse.fail("不支持的图片格式，仅支持 JPG/PNG/GIF/WEBP"));
             }
-            // 服务端重编码，剥离 polyglot 载荷
-            bytes = ImageUtil.sanitizeImage(bytes, ext);
+            // 服务端重编码，剥离 polyglot 载荷；长边超限降采样
+            bytes = ImageUtil.sanitizeImage(bytes, ext, COVER_MAX_DIMENSION);
             File dir = new File("uploads");
             if (!dir.exists()) dir.mkdirs();
             String filename = "cover_" + userId + "_" + UUID.randomUUID().toString().substring(0, 8) + "." + ext;
