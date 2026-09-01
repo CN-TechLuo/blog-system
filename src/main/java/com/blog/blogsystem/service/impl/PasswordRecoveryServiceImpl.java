@@ -86,13 +86,16 @@ public class PasswordRecoveryServiceImpl implements PasswordRecoveryService {
             user = userMapper.findByUsername(account);
         }
 
+        // 防账号枚举：账号不存在或校验信息不匹配时返回统一提示，不区分具体原因
         if (user == null) {
-            return ApiResponse.fail("账号不存在或未绑定该邮箱/手机号");
+            AuditLogger.log("RESET_REQUEST_UNKNOWN", "account=" + account);
+            return ApiResponse.success("如果账号存在，重置指引已处理", Map.of("emailSent", false));
         }
 
         boolean verified = verify.equals(user.getEmail()) || verify.equals(user.getPhone());
         if (!verified) {
-            return ApiResponse.fail("账号不存在或未绑定该邮箱/手机号");
+            AuditLogger.log("RESET_VERIFY_FAIL", "userId=" + user.getId() + ", account=" + account);
+            return ApiResponse.success("如果账号存在，重置指引已处理", Map.of("emailSent", false));
         }
 
         tokenMapper.invalidateAllForUser(user.getId());

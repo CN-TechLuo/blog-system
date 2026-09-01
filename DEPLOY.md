@@ -109,6 +109,21 @@ docker compose -f docker-compose.prod.yml --profile smtp-test up -d maildev
 # 验证完成后切换为真实 SMTP 并再次实测
 ```
 
+## 6.2 证书续期与磁盘/慢查询运维
+
+```bash
+# HTTPS 证书自动续期（Let's Encrypt，宿主机 crontab）
+# 0 3 * * 1 certbot renew --quiet --deploy-hook "docker exec blog-nginx nginx -s reload"
+
+# 磁盘容量监控（重点：logs-data 卷，审计日志保留 180 天）
+df -h /var/lib/docker/volumes/
+docker compose -f docker-compose.prod.yml exec backend du -sh /app/logs
+
+# 慢查询检查（MySQL 已开启 slow-query-log，长查询 2s 落表）
+docker compose -f docker-compose.prod.yml exec mysql mysql -uroot -p"$DB_PASSWORD" blog_db \
+  -e "SELECT * FROM mysql.slow_log ORDER BY start_time DESC LIMIT 20;"
+```
+
 ## 7. 上线后运维手册
 
 | 事项 | 频率 | 说明 |
