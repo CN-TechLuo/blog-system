@@ -113,8 +113,19 @@
 # SQL 注入：应无输出
 grep -rn '\${' src/main/resources --include='*.xml'
 
-# 密钥泄露扫描：应无输出
-git grep -nE 'root1xxx|sk-[a-zA-Z0-9]{10,}|jwt.secret=[A-Za-z0-9+/=]{16,}' $(git rev-list --all)
+# 密钥泄露扫描
+# 规则外置在 secret-patterns.txt（一行一条 ERE）；排除本文件与规则文件自身，否则会互相命中
+# 说明：git grep 只查明文，Base64 编码的密钥查不到，CI 里另跑 gitleaks
+NOISE='YOUR_|CHANGE_ME|your-smtp|YourBase64|Base64\.getEncoder|getProperty|getenv|getOrDefault|resolveSecret|setPassword|Test1234|WrongPass|12345678|example\.com'
+
+# (a) 当前代码树：应无输出
+git grep -nI -E -f secret-patterns.txt HEAD -- ':!SECURITY.md' ':!secret-patterns.txt' | grep -vE "$NOISE"
+
+# (b) 全历史：会命中"曾经存在过、后来修掉"的残留，需逐条确认而不是要求零输出
+git grep -nI -E -f secret-patterns.txt $(git rev-list --all) -- ':!SECURITY.md' ':!secret-patterns.txt' \
+  | sed -E 's/^[0-9a-f]{40}://' | sort -u | grep -vE "$NOISE"
+
+# 示例（假值，仅用于说明）：root1xxx / sk-REDACTED-KEY
 
 # 启动自检：无 JWT_SECRET 或弱密钥时应用拒绝启动
 java -jar app.jar   # 期望输出 "JWT_SECRET 强度不足" 并退出

@@ -11,5 +11,19 @@ Dockerfile
 *.md
 *.log
 src/test/
+
+# 本地密钥与本地配置：一律不进构建上下文（防止未来 COPY . . 把密钥烤进镜像层）
+.env
+.env.*
+!.env.example
 application-local.properties
+application-*.properties
+!application.properties
+!application-prod.properties
 spring-devtools.properties
+
+# 备份与运维产物
+backup/
+*.sql
+!src/main/resources/db/**/*.sql
+*.dump

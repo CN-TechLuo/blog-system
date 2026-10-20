@@ -66,3 +66,15 @@ spring-devtools.properties
 
 ### Local dev scripts (never commit) ###
 zombie-watch.ps1
+
+### Database dumps & backups (contain real user data, never commit) ###
+*.sql
+!src/main/resources/db/**/*.sql
+!src/main/resources/db/*.sql
+backup_*.sql*
+*.dump
+
+### Env variants (only .env.example is tracked) ###
+.env.*
+!.env.example
+

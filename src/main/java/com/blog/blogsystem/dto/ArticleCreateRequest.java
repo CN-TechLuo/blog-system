@@ -16,6 +16,7 @@ public class ArticleCreateRequest {
     private String title;
 
     @NotBlank(message = "文章内容不能为空")
+    @Size(max = 200000, message = "文章内容不能超过 200000 字符")
     private String content;
 
     @Size(max = 500, message = "封面URL长度不能超过500位")

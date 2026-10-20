@@ -13,7 +13,8 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci-db-password' }}
+          # CI 一次性数据库口令：不是密钥材料，仓库 Secret 存在时优先使用
+          MYSQL_ROOT_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci-throwaway-db-pw' }}
           MYSQL_DATABASE: blog_db
         ports:
           - 3306:3306
@@ -27,10 +28,13 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
+      - name: Generate ephemeral CI JWT secret
+        # 每次运行随机生成，仓库里不再存在任何可签名的 JWT 密钥
+        run: echo "CI_JWT_SECRET=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
       - name: Wait for MySQL
         run: |
           for i in $(seq 1 30); do
-            if mysql -h 127.0.0.1 -u root -p${{ secrets.CI_DB_PASSWORD || 'ci-db-password' }} -e "SELECT 1" > /dev/null 2>&1; then
+            if mysql -h 127.0.0.1 -u root -p${{ secrets.CI_DB_PASSWORD || 'ci-throwaway-db-pw' }} -e "SELECT 1" > /dev/null 2>&1; then
               echo "MySQL is ready"
               break
             fi
@@ -41,8 +45,8 @@ jobs:
         run: ./mvnw verify
         env:
           DB_USERNAME: root
-          DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci-db-password' }}
-          JWT_SECRET: ${{ secrets.CI_JWT_SECRET || 'Y2ktand0LXNlY3JldC1mb3ItY2ktb25seS0zMi1ieXRlcyE=' }}
+          DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci-throwaway-db-pw' }}
+          JWT_SECRET: ${{ env.CI_JWT_SECRET }}
           SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/blog_db?useSSL=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8
 
   docker:

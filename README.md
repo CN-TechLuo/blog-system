@@ -71,8 +71,9 @@ cd ../blog-frontend && npm install && npm run dev
 docker build -t blog-system:latest .
 
 # 运行（注意挂载 uploads 卷持久化上传文件）
+# 只监听回环：对外只暴露 Nginx 的 80/443，避免绕过 TLS 与 /actuator 内网限制
 docker run -d --name blog \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   -e DB_USERNAME=root \
   -e DB_PASSWORD=你的数据库密码 \
   -e JWT_SECRET=你的JWT密钥 \

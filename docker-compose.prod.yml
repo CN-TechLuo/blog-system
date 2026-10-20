@@ -13,8 +13,11 @@ services:
     container_name: blog-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      # 运维账号只给备份/迁移用；应用使用下方创建的低权限账号
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MYSQL_DATABASE: blog_db
+      MYSQL_USER: ${DB_APP_USER:-blog_app}
+      MYSQL_PASSWORD: ${DB_APP_PASSWORD}
       TZ: Asia/Shanghai
     command:
       - --character-set-server=utf8mb4
@@ -56,8 +59,9 @@ services:
         condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/blog_db?useSSL=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8
-      DB_USERNAME: root
-      DB_PASSWORD: ${DB_PASSWORD}
+      # 应用账号只对 blog_db 有权限，不再是 MySQL root
+      DB_USERNAME: ${DB_APP_USER:-blog_app}
+      DB_PASSWORD: ${DB_APP_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://blog.example.com}
@@ -120,7 +124,7 @@ services:
     environment:
       MYSQL_HOST: mysql
       MYSQL_USER: root
-      MYSQL_PASS: ${DB_PASSWORD}
+      MYSQL_PASS: ${DB_ROOT_PASSWORD}
       MYSQL_DB: blog_db
       MYSQLDUMP_OPTS: --single-transaction --quick
       MAX_BACKUPS: 30

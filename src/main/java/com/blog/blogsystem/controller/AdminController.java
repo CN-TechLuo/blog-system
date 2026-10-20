@@ -135,7 +135,15 @@ public class AdminController {
         int p = PageUtil.page(page);
         int size = PageUtil.pageSize(pageSize, 100);
         java.util.List<User> users = userMapper.findByPage(PageUtil.start(p, size), size);
-        users.forEach(u -> u.setPassword(null));
+        // 管理端也只回脱敏后的联系方式：管理员账号被盗或 XSS 不该等于全站 PII 泄露
+        users.forEach(u -> {
+            u.setPassword(null);
+            u.setEmail(com.blog.blogsystem.util.MaskUtil.maskEmail(u.getEmail()));
+            u.setPhone(com.blog.blogsystem.util.MaskUtil.maskPhone(u.getPhone()));
+            u.setTokenVersion(null);
+            u.setFailedAttempts(null);
+            u.setLockedUntil(null);
+        });
         int total = userMapper.countAll();
         return ResponseEntity.ok(ApiResponse.success("查询成功", new PageResponse(users, total, size, p)));
     }
