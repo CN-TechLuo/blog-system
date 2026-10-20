@@ -45,9 +45,10 @@ public class PasswordRecoveryController {
             return ResponseEntity.badRequest().body(ApiResponse.fail("请输入正确的邮箱地址"));
         }
         String ip = request.getRemoteAddr();
-        String key = "find:" + ip + ":" + email.trim().toLowerCase();
+        // 只按 IP 计数：旧实现把 email/account 拼进 key，攻击者换标识符即可绕过限流
+        String key = "find:ip:" + ip;
         if (RateLimiterUtil.isBlocked(key, MAX_RECOVERY_PER_MINUTE)) {
-            log.warn("找回账号速率限制触发: IP={}, email={}", ip, email);
+            log.warn("找回账号速率限制触发: IP={}", ip);
             return ResponseEntity.status(429).body(ApiResponse.fail("操作过于频繁，请稍后重试"));
         }
         ApiResponse<List<String>> result = recoveryService.findUsernamesByEmail(email.trim());
@@ -59,10 +60,10 @@ public class PasswordRecoveryController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> forgotPassword(HttpServletRequest request,
                                                                             @Valid @RequestBody ForgotPasswordRequest req) {
         String ip = request.getRemoteAddr();
-        String account = req.getAccount() == null ? "" : req.getAccount().trim();
-        String key = "reset:" + ip + ":" + account;
+        // 同样只按 IP 计数（不含账号），避免"换账号绕过 3 次/分钟"
+        String key = "reset:ip:" + ip;
         if (RateLimiterUtil.isBlocked(key, MAX_RECOVERY_PER_MINUTE)) {
-            log.warn("密码重置申请速率限制触发: IP={}, account={}", ip, account);
+            log.warn("密码重置申请速率限制触发: IP={}", ip);
             return ResponseEntity.status(429).body(ApiResponse.fail("操作过于频繁，请稍后重试"));
         }
         ApiResponse<Map<String, Object>> result = recoveryService.requestReset(req);

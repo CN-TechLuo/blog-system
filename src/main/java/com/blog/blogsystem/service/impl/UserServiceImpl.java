@@ -85,7 +85,14 @@ public class UserServiceImpl implements UserService {
                 ? request.getEmail().trim() : null);
         user.setPhone(request.getPhone() != null && !request.getPhone().isBlank()
                 ? request.getPhone().trim() : null);
-        int rows = userMapper.insert(user);
+        int rows;
+        try {
+            rows = userMapper.insert(user);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // uk_email / uk_username / uk_phone 唯一约束兜底，避免先查后插的竞态
+            log.info("注册失败：唯一约束冲突 username={}", request.getUsername());
+            return ApiResponse.fail("注册失败：用户名、邮箱或手机号已被占用");
+        }
 
         log.info("注册结果: username={}, rows={}", request.getUsername(), rows);
 
