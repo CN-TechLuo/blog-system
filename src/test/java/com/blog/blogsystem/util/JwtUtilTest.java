@@ -44,4 +44,17 @@ class JwtUtilTest {
         assertTrue(JwtUtil.ACCESS_EXPIRATION_MS == 30 * 60 * 1000L);
     }
 
+    @Test
+    void accessAndRefreshTokensShouldBeDistinguishable() {
+        assertEquals(JwtUtil.TYP_ACCESS, JwtUtil.getTokenType(JwtUtil.generateAccessToken(1, "alice")));
+        assertEquals(JwtUtil.TYP_REFRESH, JwtUtil.getTokenType(JwtUtil.generateRefreshToken(1, "alice", 0)));
+    }
+
+    @Test
+    void accessTokenShouldCarryGivenTokenVersion() {
+        String token = JwtUtil.generateAccessToken(9, "carol", 5);
+        assertEquals(5, JwtUtil.getTokenVersionFromToken(token));
+        assertEquals(JwtUtil.TYP_ACCESS, JwtUtil.getTokenType(token));
+    }
+
 }

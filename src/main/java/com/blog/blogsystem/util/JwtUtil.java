@@ -67,18 +67,20 @@ public class JwtUtil {
     }
 
     public static String generateRefreshToken(Integer userId, String username, int tokenVersion) {
-        return generateToken(userId, username, REFRESH_EXPIRATION_MS, tokenVersion);
+        return generateToken(userId, username, REFRESH_EXPIRATION_MS, tokenVersion, TYP_REFRESH);
     }
 
     public static String generateAccessToken(Integer userId, String username) {
-        return generateToken(userId, username, ACCESS_EXPIRATION_MS, 0);
+        return generateAccessToken(userId, username, 0);
     }
 
-    private static String generateToken(Integer userId, String username, long expirationMs) {
-        return generateToken(userId, username, expirationMs, 0);
+    /** 签发访问令牌：携带当前 tokenVersion，改密/撤销后旧访问令牌可被立即拒绝 */
+    public static String generateAccessToken(Integer userId, String username, int tokenVersion) {
+        return generateToken(userId, username, ACCESS_EXPIRATION_MS, tokenVersion, TYP_ACCESS);
     }
 
-    private static String generateToken(Integer userId, String username, long expirationMs, int tokenVersion) {
+    private static String generateToken(Integer userId, String username, long expirationMs,
+                                        int tokenVersion, String typ) {
         Date now = new Date();
         Date expiration = new Date(now.getTime() + expirationMs);
         return Jwts.builder()
@@ -88,10 +90,22 @@ public class JwtUtil {
                 .subject(username)
                 .claim("userId", userId)
                 .claim("tokenVersion", tokenVersion)
+                .claim(CLAIM_TYP, typ)
                 .issuedAt(now)
                 .expiration(expiration)
                 .signWith(KEY, Jwts.SIG.HS256)
                 .compact();
+    }
+
+    /** 令牌类型（access / refresh）；旧令牌（无 typ 声明）返回 null */
+    public static String getTokenType(String token) {
+        try {
+            Claims claims = parseToken(token);
+            Object typ = claims.get(CLAIM_TYP);
+            return typ instanceof String ? (String) typ : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public static String getUsernameFromToken(String token) {

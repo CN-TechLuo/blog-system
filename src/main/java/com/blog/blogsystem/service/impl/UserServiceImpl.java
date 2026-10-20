@@ -146,8 +146,9 @@ public class UserServiceImpl implements UserService {
             userMapper.clearFailedAttempts(user.getId());
         }
 
-        String accessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername());
-        String refreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), user.getTokenVersion() != null ? user.getTokenVersion() : 0);
+        int currentVersion = user.getTokenVersion() != null ? user.getTokenVersion() : 0;
+        String accessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername(), currentVersion);
+        String refreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), currentVersion);
 
         AuditLogger.log("LOGIN_SUCCESS", "userId=" + user.getId() + ", username=" + user.getUsername()
                 + ", ip=" + clientIp);
@@ -166,6 +167,10 @@ public class UserServiceImpl implements UserService {
     public ApiResponse<RefreshTokenResponse> refreshToken(RefreshTokenRequest request) {
         if (request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
             return ApiResponse.fail("refreshToken 不能为空");
+        }
+        // 只接受 refresh 类型令牌，防止把 access token 送去刷新（版本语义不同）
+        if (!JwtUtil.TYP_REFRESH.equals(JwtUtil.getTokenType(request.getRefreshToken()))) {
+            return ApiResponse.fail("refreshToken 无效");
         }
 
         Integer userId = JwtUtil.getUserIdFromToken(request.getRefreshToken());
@@ -187,10 +192,10 @@ public class UserServiceImpl implements UserService {
             return ApiResponse.fail("refreshToken 已失效，请重新登录");
         }
 
-        // 旋转刷新：每次刷新递增 tokenVersion，旧 refresh token 立即失效（防重放）
+        // 旋转刷新：每次刷新递增 tokenVersion，旧 refresh / access token 立即失效（防重放）
         int newVersion = currentVersion + 1;
         userMapper.incrementTokenVersion(userId);
-        String newAccessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername());
+        String newAccessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername(), newVersion);
         String newRefreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), newVersion);
 
         RefreshTokenResponse data = new RefreshTokenResponse();

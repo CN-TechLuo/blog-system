@@ -1,5 +1,6 @@
 package com.blog.blogsystem.config;
 
+import com.blog.blogsystem.mapper.UserMapper;
 import com.blog.blogsystem.service.TokenBlacklistService;
 import com.blog.blogsystem.util.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,6 +17,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * - /api/article/** 的 GET 请求：公开放行；若携带有效 token 则解析出
  *   userId 存入 request attribute（用于点赞/收藏状态回显），无效则忽略
  * - 登出后 jti 进入黑名单的 token 一律拒绝
+ * - 只接受 typ=access 的令牌：refresh token 不能当访问凭据用
+ * - 受保护路径校验 tokenVersion：改密/重置/撤销后旧 access token 立即失效
  */
 @Component
 public class AuthInterceptor implements HandlerInterceptor {
@@ -23,9 +26,11 @@ public class AuthInterceptor implements HandlerInterceptor {
     private static final Logger log = LoggerFactory.getLogger(AuthInterceptor.class);
 
     private final TokenBlacklistService tokenBlacklistService;
+    private final UserMapper userMapper;
 
-    public AuthInterceptor(TokenBlacklistService tokenBlacklistService) {
+    public AuthInterceptor(TokenBlacklistService tokenBlacklistService, UserMapper userMapper) {
         this.tokenBlacklistService = tokenBlacklistService;
+        this.userMapper = userMapper;
     }
 
     @Override
@@ -42,7 +47,8 @@ public class AuthInterceptor implements HandlerInterceptor {
             String authHeader = request.getHeader("Authorization");
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 String token = authHeader.substring(7);
-                if (!isBlacklisted(token)) {
+                // 公开只读接口只做"尽力识别"，不因令牌失效打断浏览体验
+                if (JwtUtil.TYP_ACCESS.equals(JwtUtil.getTokenType(token)) && !isBlacklisted(token)) {
                     Integer viewerId = JwtUtil.getUserIdFromToken(token);
                     if (viewerId != null) {
                         request.setAttribute("userId", viewerId);
@@ -64,9 +70,25 @@ public class AuthInterceptor implements HandlerInterceptor {
             log.debug("Token 无效或已过期: {} {}", request.getMethod(), request.getRequestURI());
             throw new AuthenticationException(HttpStatus.UNAUTHORIZED, "token 无效或已过期");
         }
+
+        // 仅接受 access 类型；refresh token 7 天有效，若能当访问凭据使用等于绕过短有效期设计
+        if (!JwtUtil.TYP_ACCESS.equals(JwtUtil.getTokenType(token))) {
+            log.warn("拒绝非 access 类型令牌访问受保护接口: uri={}", request.getRequestURI());
+            throw new AuthenticationException(HttpStatus.UNAUTHORIZED, "token 类型不正确，请使用访问令牌");
+        }
+
         if (isBlacklisted(token)) {
             log.debug("Token 已登出吊销: {} {}", request.getMethod(), request.getRequestURI());
             throw new AuthenticationException(HttpStatus.UNAUTHORIZED, "token 已失效，请重新登录");
+        }
+
+        // 令牌版本校验：改密 / 重置密码 / 撤销管理员后，旧访问令牌立即失效
+        int tokenVersion = JwtUtil.getTokenVersionFromToken(token);
+        Integer currentVersion = userMapper.findTokenVersion(userId);
+        if (currentVersion != null && tokenVersion != currentVersion) {
+            log.info("令牌版本不匹配，已拒绝: userId={}, tokenVersion={}, currentVersion={}",
+                    userId, tokenVersion, currentVersion);
+            throw new AuthenticationException(HttpStatus.UNAUTHORIZED, "登录状态已失效，请重新登录");
         }
 
         request.setAttribute("userId", userId);
