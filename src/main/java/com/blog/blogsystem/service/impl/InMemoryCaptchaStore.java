@@ -28,6 +28,14 @@ public class InMemoryCaptchaStore implements CaptchaStore {
         return entry.answer();
     }
 
+    /** 仅用于测试与诊断：读取答案但不消费条目，禁止在生产流程中使用 */
+    public String peek(String captchaId) {
+        Entry entry = store.get(captchaId);
+        if (entry == null) return null;
+        if (System.currentTimeMillis() > entry.expireAt()) return null;
+        return entry.answer();
+    }
+
     @Override
     public void cleanExpired() {
         long now = System.currentTimeMillis();
