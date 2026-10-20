@@ -6,6 +6,7 @@ import com.blog.blogsystem.dto.ArticleUpdateRequest;
 import com.blog.blogsystem.dto.PageResponse;
 import com.blog.blogsystem.entity.Article;
 import com.blog.blogsystem.service.ArticleService;
+import com.blog.blogsystem.util.ClientIpUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -69,7 +70,7 @@ public class ArticleController {
     @Operation(summary = "文章详情")
     public ResponseEntity<ApiResponse<Article>> detail(HttpServletRequest request, @PathVariable Integer id) {
         Integer viewerId = (Integer) request.getAttribute("userId");
-        ApiResponse<Article> result = articleService.detail(id, viewerId, request.getRemoteAddr());
+        ApiResponse<Article> result = articleService.detail(id, viewerId, ClientIpUtil.resolve(request));
         if (!result.isSuccess()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(result);
         }

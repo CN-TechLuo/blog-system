@@ -1,5 +1,6 @@
 package com.blog.blogsystem.config;
 
+import com.blog.blogsystem.util.ClientIpUtil;
 import com.blog.blogsystem.util.RateLimiterUtil;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
@@ -57,16 +58,8 @@ public class GlobalRateLimitFilter implements Filter {
     }
 
     private String resolveClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            int comma = xff.indexOf(',');
-            return (comma > 0 ? xff.substring(0, comma) : xff).trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-        return request.getRemoteAddr();
+        // 只信任可信代理追加的跳数；直连请求的 XFF 一律忽略（防伪造）
+        return ClientIpUtil.resolve(request);
     }
 
     @Override

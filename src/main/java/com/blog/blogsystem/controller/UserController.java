@@ -15,6 +15,7 @@ import com.blog.blogsystem.service.AccountService;
 import com.blog.blogsystem.service.TokenBlacklistService;
 import com.blog.blogsystem.service.UserService;
 import com.blog.blogsystem.util.AuditLogger;
+import com.blog.blogsystem.util.ClientIpUtil;
 import com.blog.blogsystem.util.ImageUtil;
 import com.blog.blogsystem.util.JwtUtil;
 import com.blog.blogsystem.util.PasswordUtil;
@@ -197,7 +198,7 @@ public class UserController {
     }
 
     private String getClientIp(HttpServletRequest request) {
-        return request.getRemoteAddr();
+        return ClientIpUtil.resolve(request);
     }
 
     @GetMapping("/export-data")
