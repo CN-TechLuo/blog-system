@@ -103,11 +103,14 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOriginPatterns("*")  // 生产环境替换为具体域名
+                // 必须使用精确来源，禁止 "*" / allowedOriginPatterns 通配
+                .allowedOrigins("https://your-frontend.example.com")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*")
-                .allowCredentials(true)
-                .maxAge(3600);
+                .allowedHeaders("Authorization", "Content-Type")
+                // JWT 通过 Authorization 头传递，不需要 CORS credentials；
+                // 若确需 cookie，也绝不能与通配来源同时开启
+                .allowCredentials(false)
+                .maxAge(1800);
     }
 }
 ```

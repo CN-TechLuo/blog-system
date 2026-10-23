@@ -25,19 +25,21 @@
 
 - BCrypt **cost=12**（企业级强度，`PasswordUtil`）；`matches()` 兼容旧 cost=10 密文。
 - 注册/改密/重置全部走 `PasswordUtil.encode`，数据库不存明文。
-- 找回密码重置令牌以 **SHA-256 哈希**入库，即使拖库也无法直接用令牌重置他人账号。
+- 密码 UTF-8 编码后限制在 **72 字节**内，避免 BCrypt 静默截断；正则同时限制 8–50 位。
+- 找回密码重置令牌以 **SHA-256 哈希**入库，`token_hash` 唯一，单次有效并定时清理过期记录。
 
 ## L4 JWT 令牌强化 ✅
 
 - HS256 签名密钥 **≥32 字节**（不足直接拒绝启动，防止弱密钥）。
 - 校验 `issuer`（blog-system）与 `audience`（blog-web），防跨应用令牌混用。
 - Access Token 有效期 **30 分钟**（缩短泄露窗口），Refresh Token 7 天。
-- 改密/重置/撤销管理员后 `token_version` 递增，旧 Refresh Token 立即失效。
+- 两类令牌带 `typ=access|refresh` 声明；拦截器只接受 access，`/refresh` 只接受 refresh。
+- 改密/重置/登出后 `token_version` 递增，旧 access 与 refresh **均立即失效**（每次请求校验 DB 版本）。
 
 ## L5 防暴力破解与令牌重放 ✅
 
-- 登录限流：单账号 5 次/分钟 + 单 IP 30 次/分钟（`RateLimiterUtil`）。
-- **连续失败 5 次锁定账号 15 分钟**（内存实现，重启重置）。
+- 登录限流：单 IP+账号 5 次/分钟 + 单 IP 30 次/分钟 + 单账号 10 次/分钟（`RateLimiterUtil`）。
+- 登录前置图形验证码（4 位 PNG，单次有效）；**不再按账号硬锁定**，避免攻击者用错误密码冻结他人账号。
 - **Refresh Token 旋转**：每次刷新递增 `token_version`，旧 refresh token 立即失效，防重放。
 
 ## L6 授权与越权防护（RBAC + IDOR） ✅
@@ -50,30 +52,33 @@
 
 - `GlobalRateLimitFilter`：所有 `/api/**` 按 IP 600 次/分钟，超限返回 429 + `Retry-After`。
 - 业务级细粒度限流叠加：注册、登录、找回密码、AI 调用。
-- 信任模型：反向代理必须覆盖 `X-Forwarded-For`；`server.forward-headers-strategy=framework`。
+- 信任模型：`server.forward-headers-strategy=none`；`ClientIpResolver` 仅在 `remoteAddr` 命中 `TRUSTED_PROXIES` CIDR 时采信转发头，并从右向左取第一个不可信地址。Nginx 必须用 `$remote_addr` 覆盖 `X-Forwarded-For`。
 
 ## L8 安全响应头 ✅
 
-- `Content-Security-Policy`（API/uploads）、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`。
+- `Content-Security-Policy` 覆盖 API、uploads 与非 Swagger 响应；`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`。
 - `Referrer-Policy`、`Permissions-Policy`、`Cross-Origin-Opener-Policy`、`Cross-Origin-Resource-Policy`、`X-Permitted-Cross-Domain-Policies`、`X-Download-Options`。
-- HTTPS 下自动下发 **HSTS**（max-age 1 年 + includeSubDomains）。
-- 登录/刷新响应 `Cache-Control: no-store`，防 token 被缓存留存。
+- **HSTS 始终下发**（浏览器只在 HTTPS 下生效），不依赖反向代理后的 `isSecure()`。
+- 登录/刷新/找回/重置/验证码/导出等敏感响应统一 `Cache-Control: no-store`。
 
 ## L9 CORS 白名单严格化 ✅
 
-- 显式 `allowedOriginPatterns`（环境变量 `CORS_ORIGINS`，逗号分隔），`allowCredentials(true)` 不使用 `*` 源。
+- 使用精确 `allowedOrigins`（环境变量 `CORS_ORIGINS`，逗号分隔）；启动时检测到 `*`/通配符直接失败。
+- `allowCredentials(false)`（JWT 走 `Authorization` 头，不需要跨域 cookie），不暴露 `Authorization` 响应头。
 - 方法/请求头白名单（`Authorization`/`Content-Type`），生产环境 Swagger 关闭。
 
 ## L10 文件上传安全 ✅
 
 - 仅 Base64 JSON 上传；大小上限 2MB（解码前后双重校验）。
-- `ImageUtil` 魔数检测 + **服务端重编码**，剥离 polyglot/恶意载荷。
-- 文件名随机化（UUID），无路径穿越风险；multipart 限额 5MB。
+- `ImageUtil` 魔数检测 + **解码前 ImageReader 读取宽高**（40MP 上限，防解压炸弹）+ 服务端重编码。
+- 不接受 WebP（JDK 无内置解码器，无法安全重编码）；文件名随机化（UUID），无路径穿越风险。
 
 ## L11 敏感信息脱敏与日志安全 ✅
 
-- 手机号/邮箱/用户名脱敏（`MaskUtil`）；管理端用户列表强制置空密码字段。
-- 日志**不打印密码/令牌**；审计日志仅记录 userId/username/IP 元数据。
+- 手机号/邮箱脱敏（`MaskUtil`），敏感日志中的用户名按需脱敏；管理端用户列表同时置空密码并脱敏邮箱/手机号。
+- 日志**不打印密码/令牌**；审计日志写入与接口读取均对邮箱/手机号脱敏，保留 userId/username/IP 供安全排查。
+- 账号注销在事务提交后删除当前及历史头像/封面文件（`uploads/avatar_<id>_*`、`cover_<id>_*`）。
+- 文章/评论只允许本站 `/uploads/` 图片；封面 URL 白名单校验，Nginx CSP `img-src 'self' data:` 阻断外链追踪像素。
 - 错误响应 `server.error.include-message/stacktrace=never`，不向客户端泄露堆栈。
 
 ## L12 依赖与供应链安全 🟡
@@ -90,13 +95,13 @@
 ## L14 安全审计日志 ✅
 
 - 独立 `logs/audit.log`（20MB×14 天滚动，`AuditLogger`）。
-- 记录：登录成功/失败/锁定、Refresh 拒绝、改密、密码重置申请/完成、管理员增删用户/文章、反馈处理、权限授予/撤销、引导提升。
+- 记录：登录成功/失败、Refresh 拒绝、改密、密码重置申请/完成、管理员增删用户/文章、反馈处理、权限授予/撤销、管理员引导。
 
 ## L15 部署与运行环境加固 ✅/🟡
 
 - Docker 非 root 运行（appuser）、多阶段构建、健康检查、优雅停机；`application-local.properties` 不入镜像。
 - 生产建议：`docker run --cap-drop=ALL --read-only --security-opt no-new-privileges`；Nginx 侧强制 HTTPS/TLS1.2+；`/actuator` 仅内网可达。
-- 数据库：最小权限账号（应用账号仅 DML，不授予 DDL/DROP）、定期备份（`ops/backup-db.ps1`）。
+- 数据库：compose 默认沿用 root；可选加固是 `ops/mysql-init` 创建 `blog_app`（仅 blog_db 范围 DDL/DML）与 `blog_backup`（SELECT/LOCK TABLES/SHOW VIEW/TRIGGER），启用后把 compose 的 `DB_USERNAME`/`DB_USER` 改为对应账号。备份使用 AES-256-CBC + PBKDF2 加密（`ops/backup.sh` / `ops/restore.sh`）。
 
 ## L16 纵深防御与应急响应 📋
 
@@ -113,8 +118,9 @@
 # SQL 注入：应无输出
 grep -rn '\${' src/main/resources --include='*.xml'
 
-# 密钥泄露扫描：应无输出
-git grep -nE 'root1xxx|sk-[a-zA-Z0-9]{10,}|jwt.secret=[A-Za-z0-9+/=]{16,}' $(git rev-list --all)
+# 密钥泄露扫描：应无输出（不要在规则里写真实口令；排除本文档避免自命中）
+git log --all -p -G '(AKIA|ASIA)[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,}|(jwt[._-]?secret|password|secret)[[:space:]]*[=:][[:space:]]*[^$#{[:space:]]{8,}' \
+  --format='COMMIT %h %ad %s' --date=short -- ':!SECURITY.md'
 
 # 启动自检：无 JWT_SECRET 或弱密钥时应用拒绝启动
 java -jar app.jar   # 期望输出 "JWT_SECRET 强度不足" 并退出

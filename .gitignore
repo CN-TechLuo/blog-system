@@ -34,7 +34,18 @@ build/
 
 ### Local dev secrets (never commit) ###
 .env
+.env.*
+!.env.example
 application-local.properties
+
+### SQL dumps / backups (never commit) ###
+*.sql
+!src/main/resources/db/**
+backup_*.sql*
+*.sql.gz
+*.sql.gz.enc
+/backup/
+backup/
 
 ### AI tooling (never commit) ###
 .kilo/
@@ -44,6 +55,8 @@ application-local.properties
 spring-devtools.properties
 
 ### Security: never commit credentials, keys, or dumps ###
+ops/backup.key
+*.sql.gz.enc
 *.pem
 *.key
 *.pfx

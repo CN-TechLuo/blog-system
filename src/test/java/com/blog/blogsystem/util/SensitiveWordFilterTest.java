@@ -27,6 +27,13 @@ class SensitiveWordFilterTest {
     }
 
     @Test
+    void shouldDetectObfuscatedSensitiveWord() {
+        assertTrue(SensitiveWordFilter.containsSensitive("色 情"));
+        assertTrue(SensitiveWordFilter.containsSensitive("色\u200B情"), "零宽字符不能绕过");
+        assertTrue(SensitiveWordFilter.containsSensitive("ＦＵＣＫ"), "全角字符不能绕过");
+    }
+
+    @Test
     void shouldMaskSensitiveWord() {
         assertEquals("这是**内容", SensitiveWordFilter.mask("这是色情内容"));
     }

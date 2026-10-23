@@ -16,17 +16,15 @@ import com.blog.blogsystem.mapper.PasswordResetTokenMapper;
 import com.blog.blogsystem.mapper.ReportMapper;
 import com.blog.blogsystem.mapper.TagMapper;
 import com.blog.blogsystem.mapper.UserMapper;
+import com.blog.blogsystem.service.AccountService;
 import com.blog.blogsystem.service.AiUsageService;
 import com.blog.blogsystem.service.SiteConfigService;
 import com.blog.blogsystem.util.AuditLogger;
+import com.blog.blogsystem.util.MaskUtil;
 import com.blog.blogsystem.util.PageUtil;
 import com.blog.blogsystem.util.RoleConst;
 import io.swagger.v3.oas.annotations.Operation;
-import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -44,11 +42,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * 管理端接口：用户/文章/反馈/举报管理、AI 用量统计、站点联系邮箱设置（全部需 admin 角色）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @RestController
 @RequestMapping("/api/admin")
 public class AdminController {
-
-    private static final Logger log = LoggerFactory.getLogger(AdminController.class);
 
     private static final Set<String> ALLOWED_FEEDBACK_STATUS = Set.of("pending", "resolved");
 
@@ -65,13 +67,7 @@ public class AdminController {
     private final TagMapper tagMapper;
     private final SiteConfigService siteConfigService;
     private final AiUsageService aiUsageService;
-
-    @Value("${admin.bootstrap-username:admin}")
-    private String bootstrapUsername;
-
-    /** 管理员引导提升开关：默认关闭，显式设置 true 后才允许在无管理员时自动提升已注册的 admin 用户 */
-    @Value("${admin.bootstrap-enabled:false}")
-    private boolean bootstrapEnabled;
+    private final AccountService accountService;
 
     public AdminController(UserMapper userMapper, ArticleMapper articleMapper,
                            CommentMapper commentMapper, FeedbackMapper feedbackMapper,
@@ -79,7 +75,7 @@ public class AdminController {
                            FollowMapper followMapper, NotificationMapper notificationMapper,
                            PasswordResetTokenMapper tokenMapper, ReportMapper reportMapper,
                            TagMapper tagMapper, SiteConfigService siteConfigService,
-                           AiUsageService aiUsageService) {
+                           AiUsageService aiUsageService, AccountService accountService) {
         this.userMapper = userMapper;
         this.articleMapper = articleMapper;
         this.commentMapper = commentMapper;
@@ -93,30 +89,7 @@ public class AdminController {
         this.tagMapper = tagMapper;
         this.siteConfigService = siteConfigService;
         this.aiUsageService = aiUsageService;
-    }
-
-    @PostConstruct
-    public void bootstrapAdmin() {
-        try {
-            if (userMapper.countAdmins() > 0) return;
-            if (!bootstrapEnabled) {
-                log.warn("系统中无管理员且 admin.bootstrap-enabled 未开启，请通过数据库手动设置管理员: "
-                        + "UPDATE user SET role='admin' WHERE username='你的用户名';");
-                return;
-            }
-            User seed = userMapper.findByUsername(bootstrapUsername);
-            if (seed != null) {
-                userMapper.updateRole(seed.getId(), RoleConst.ADMIN);
-                AuditLogger.log("ADMIN_BOOTSTRAP", "userId=" + seed.getId() + ", username=" + seed.getUsername());
-                log.warn("系统中无管理员，已将用户 {} (id={}) 提升为管理员，请尽快登录确认",
-                        seed.getUsername(), seed.getId());
-            } else {
-                log.warn("系统中无管理员且用户 {} 不存在，请先注册该用户名再开启引导提升，或通过数据库手动设置管理员",
-                        bootstrapUsername);
-            }
-        } catch (Exception e) {
-            log.warn("管理员初始化检查失败", e);
-        }
+        this.accountService = accountService;
     }
 
     private boolean checkAdmin(HttpServletRequest request) {
@@ -135,7 +108,12 @@ public class AdminController {
         int p = PageUtil.page(page);
         int size = PageUtil.pageSize(pageSize, 100);
         java.util.List<User> users = userMapper.findByPage(PageUtil.start(p, size), size);
-        users.forEach(u -> u.setPassword(null));
+        users.forEach(u -> {
+            u.setPassword(null);
+            // 管理端也不再返回完整联系方式，降低管理员账号被盗/XSS 后的 PII 泄露面
+            u.setEmail(MaskUtil.maskEmail(u.getEmail()));
+            u.setPhone(MaskUtil.maskPhone(u.getPhone()));
+        });
         int total = userMapper.countAll();
         return ResponseEntity.ok(ApiResponse.success("查询成功", new PageResponse(users, total, size, p)));
     }
@@ -149,15 +127,8 @@ public class AdminController {
         if (user == null) return ResponseEntity.badRequest().body(ApiResponse.fail("用户不存在"));
         if (RoleConst.ADMIN.equals(user.getRole()))
             return ResponseEntity.badRequest().body(ApiResponse.fail("不能删除管理员"));
-        commentMapper.deleteByUserId(id);
-        articleMapper.deleteByUserId(id);
-        likeMapper.deleteByUserId(id);
-        bookmarkMapper.deleteByUserId(id);
-        followMapper.deleteByUserId(id);
-        notificationMapper.deleteByUserId(id);
-        feedbackMapper.deleteByUserId(id);
-        tokenMapper.deleteByUserId(id);
-        userMapper.deleteById(id);
+        // 统一走账号注销逻辑：级联删除全部个人数据，并在事务提交后清理头像/封面文件
+        accountService.deleteAccount(id);
         AuditLogger.log("ADMIN_DELETE_USER", "operatorId=" + request.getAttribute("userId")
                 + ", targetUserId=" + id + ", targetUsername=" + user.getUsername());
         return ResponseEntity.ok(ApiResponse.success("删除成功（含该用户全部数据）"));

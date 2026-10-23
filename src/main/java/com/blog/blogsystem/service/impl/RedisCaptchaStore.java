@@ -8,8 +8,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import java.time.Duration;
 
 /**
- * Redis 验证码存储（多实例共享）：SET PX 过期 + GETDEL 单次取出。
- * 生产多副本环境必须使用本实现（docker-compose 已内置 redis）。
+ * Redis 验证码存储（多实例共享）：SET PX 过期 + GETDEL 单次取出。 生产多副本环境必须使用本实现（docker-compose 已内置 redis）。
+ *
+ * @author CN-TechLuo
+ * @date 2026/09/01
  */
 public class RedisCaptchaStore implements CaptchaStore {
 

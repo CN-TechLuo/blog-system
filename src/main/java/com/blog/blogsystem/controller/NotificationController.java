@@ -12,6 +12,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 站内通知接口：通知列表、未读数、标记已读
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @RestController
 @RequestMapping("/api/notification")
 public class NotificationController {

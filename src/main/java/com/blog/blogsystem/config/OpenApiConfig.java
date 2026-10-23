@@ -6,6 +6,12 @@ import io.swagger.v3.oas.models.info.License;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Swagger/OpenAPI 文档配置（生产环境通过 springdoc 配置关闭）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Configuration
 public class OpenApiConfig {
 

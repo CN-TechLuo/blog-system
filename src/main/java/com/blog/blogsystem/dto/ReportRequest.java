@@ -8,6 +8,9 @@ import lombok.Setter;
 
 /**
  * 举报请求 DTO
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/21
  */
 @Setter
 @Getter

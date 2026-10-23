@@ -5,6 +5,12 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * 登录请求（含图形验证码字段）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Setter
 @Getter
 public class LoginRequest {

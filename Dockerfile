@@ -26,7 +26,7 @@ RUN ./mvnw package -DskipTests -q
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
-RUN apk add --no-cache tzdata \
+RUN apk add --no-cache tzdata fontconfig ttf-dejavu \
     && addgroup -S appgroup && adduser -S appuser -G appgroup \
     && mkdir -p /app/uploads /app/logs && chown -R appuser:appgroup /app
 ENV TZ=Asia/Shanghai \
@@ -37,4 +37,4 @@ VOLUME /app/uploads
 VOLUME /app/logs
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
   CMD wget -qO- http://localhost:8080/actuator/health || exit 1
-ENTRYPOINT ["java", "-XX:+UseZGC", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Djava.awt.headless=true", "-XX:+UseZGC", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]

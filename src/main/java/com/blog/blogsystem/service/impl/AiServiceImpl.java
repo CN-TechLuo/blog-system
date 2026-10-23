@@ -1,7 +1,9 @@
 package com.blog.blogsystem.service.impl;
 
 import com.blog.blogsystem.dto.ApiResponse;
+import com.blog.blogsystem.service.AiCallCounter;
 import com.blog.blogsystem.service.AiService;
+import com.blog.blogsystem.util.SensitiveWordFilter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -20,6 +22,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 
+/**
+ * AI 服务实现：调用 DeepSeek（OpenAI 协议兼容）大模型 API，支持流式输出与长文分块
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Service
 public class AiServiceImpl implements AiService {
 
@@ -38,6 +46,15 @@ public class AiServiceImpl implements AiService {
 
     private static final int MAX_TOKENS = 8192;
     private static final int CHUNK_CHARS = 18000;
+    private static final int MAX_HISTORY_MESSAGES = 20;
+    private static final int MAX_HISTORY_CHARS = 2000;
+    private static final int MAX_HISTORY_JSON_CHARS = 20000;
+
+    private final AiCallCounter callCounter;
+
+    public AiServiceImpl(AiCallCounter callCounter) {
+        this.callCounter = callCounter;
+    }
 
     @Override
     public ApiResponse<Map<String, Object>> generate(String prompt, String style) {
@@ -111,6 +128,7 @@ public class AiServiceImpl implements AiService {
             return;
         }
 
+        callCounter.increment();
         List<Map<String, String>> messages = buildMessages(CHAT_SYSTEM_PROMPT, message, historyJson);
         String requestBody = MAPPER.writeValueAsString(Map.of(
                 "model", model,
@@ -268,6 +286,7 @@ public class AiServiceImpl implements AiService {
             return ApiResponse.fail("DeepSeek API Key 未配置，请设置环境变量 DEEPSEEK_API_KEY");
         }
 
+        callCounter.increment();
         try {
             List<Map<String, String>> messages = buildMessages(systemPrompt, userPrompt, historyJson);
 
@@ -324,14 +343,29 @@ public class AiServiceImpl implements AiService {
     private List<Map<String, String>> buildMessages(String systemPrompt, String userPrompt, String historyJson) {
         List<Map<String, String>> messages = new ArrayList<>();
         messages.add(Map.of("role", "system", "content", systemPrompt));
-        if (historyJson != null && !historyJson.isBlank()) {
+
+        // M7：客户端历史只允许 user/assistant，限制条数/长度并过敏感词，禁止注入 system
+        if (historyJson != null && !historyJson.isBlank()
+                && historyJson.length() <= MAX_HISTORY_JSON_CHARS) {
             try {
                 JsonNode arr = MAPPER.readTree(historyJson);
-                for (JsonNode m : arr) {
-                    messages.add(Map.of("role", m.get("role").asText(), "content", m.get("content").asText()));
+                int added = 0;
+                if (arr.isArray()) {
+                    for (JsonNode m : arr) {
+                        if (added >= MAX_HISTORY_MESSAGES) break;
+                        String role = m.path("role").asText("");
+                        String content = m.path("content").asText("");
+                        if (!"user".equals(role) && !"assistant".equals(role)) continue;
+                        if (content.isBlank() || content.length() > MAX_HISTORY_CHARS) continue;
+                        if (SensitiveWordFilter.containsSensitive(content)) continue;
+                        messages.add(Map.of("role", role, "content", content));
+                        added++;
+                    }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
+
         messages.add(Map.of("role", "user", "content", userPrompt));
         return messages;
     }

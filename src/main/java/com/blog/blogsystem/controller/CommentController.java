@@ -17,6 +17,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 评论接口：发表、分页查询（含嵌套回复）、删除
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @RestController
 @Tag(name = "评论管理", description = "文章评论的查看、发表、删除")
 public class CommentController {

@@ -8,6 +8,9 @@ import lombok.Data;
 
 /**
  * 文章更新请求 DTO
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 @Data
 public class ArticleUpdateRequest {
@@ -20,10 +23,11 @@ public class ArticleUpdateRequest {
     private String title;
 
     @NotBlank(message = "文章内容不能为空")
+    @Size(max = 100000, message = "文章内容不能超过100000字")
     private String content;
 
     @Size(max = 500)
-    @Pattern(regexp = "^(|/uploads/[A-Za-z0-9._-]+|https?://[\\w.-]+/.*)$", message = "封面URL格式不正确")
+    @Pattern(regexp = "^(|/uploads/[A-Za-z0-9._-]+)$", message = "封面仅支持本站上传的图片")
     private String coverUrl;
 
     /** 是否含 AI 生成内容（深度合成合规标识） */

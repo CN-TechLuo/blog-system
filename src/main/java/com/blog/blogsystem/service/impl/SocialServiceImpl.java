@@ -9,9 +9,11 @@ import com.blog.blogsystem.mapper.ArticleMapper;
 import com.blog.blogsystem.mapper.BookmarkMapper;
 import com.blog.blogsystem.mapper.FollowMapper;
 import com.blog.blogsystem.mapper.LikeMapper;
+import com.blog.blogsystem.mapper.UserMapper;
 import com.blog.blogsystem.service.NotificationService;
 import com.blog.blogsystem.service.SocialService;
 import com.blog.blogsystem.util.PageUtil;
+import com.blog.blogsystem.util.RateLimiterUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
@@ -20,6 +22,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * 社交服务实现：关注/点赞/收藏 + 通知联动
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Service
 public class SocialServiceImpl implements SocialService {
 
@@ -29,21 +37,27 @@ public class SocialServiceImpl implements SocialService {
     private final BookmarkMapper bookmarkMapper;
     private final FollowMapper followMapper;
     private final ArticleMapper articleMapper;
+    private final UserMapper userMapper;
     private final NotificationService notificationService;
 
     public SocialServiceImpl(LikeMapper likeMapper, BookmarkMapper bookmarkMapper,
                               FollowMapper followMapper, ArticleMapper articleMapper,
+                              UserMapper userMapper,
                               NotificationService notificationService) {
         this.likeMapper = likeMapper;
         this.bookmarkMapper = bookmarkMapper;
         this.followMapper = followMapper;
         this.articleMapper = articleMapper;
+        this.userMapper = userMapper;
         this.notificationService = notificationService;
     }
 
     @Override
     @Transactional
     public ApiResponse<Boolean> like(Integer userId, Integer articleId) {
+        if (articleMapper.findById(articleId) == null) {
+            return ApiResponse.fail("文章不存在");
+        }
         if (likeMapper.exists(userId, articleId) > 0) {
             return ApiResponse.fail("已点赞");
         }
@@ -73,6 +87,9 @@ public class SocialServiceImpl implements SocialService {
     @Override
     @Transactional
     public ApiResponse<Boolean> bookmark(Integer userId, Integer articleId) {
+        if (articleMapper.findById(articleId) == null) {
+            return ApiResponse.fail("文章不存在");
+        }
         if (bookmarkMapper.exists(userId, articleId) > 0) {
             return ApiResponse.fail("已收藏");
         }
@@ -104,6 +121,9 @@ public class SocialServiceImpl implements SocialService {
         if (followerId.equals(followeeId)) {
             return ApiResponse.fail("不能关注自己");
         }
+        if (userMapper.findById(followeeId) == null) {
+            return ApiResponse.fail("用户不存在");
+        }
         if (followMapper.exists(followerId, followeeId) > 0) {
             return ApiResponse.fail("已关注");
         }
@@ -115,7 +135,10 @@ public class SocialServiceImpl implements SocialService {
         } catch (DuplicateKeyException e) {
             return ApiResponse.fail("已关注");
         }
-        notificationService.create(followeeId, "follow", followerId, null, null, null);
+        // 关注->取关->关注 循环最多每分钟产生 1 条通知
+        if (!RateLimiterUtil.isBlocked("notify:follow:" + followerId + ":" + followeeId, 1)) {
+            notificationService.create(followeeId, "follow", followerId, null, null, null);
+        }
         return ApiResponse.success("关注成功", true);
     }
 

@@ -1,5 +1,11 @@
 package com.blog.blogsystem.util;
 
+/**
+ * 敏感信息脱敏工具：手机号/邮箱/用户名打码展示
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 public final class MaskUtil {
 
     private MaskUtil() {}

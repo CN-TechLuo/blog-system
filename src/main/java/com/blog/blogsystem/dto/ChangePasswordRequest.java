@@ -8,6 +8,9 @@ import lombok.Data;
 
 /**
  * 修改密码请求
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 @Data
 public class ChangePasswordRequest {

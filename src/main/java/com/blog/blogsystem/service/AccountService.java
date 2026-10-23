@@ -21,16 +21,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 账号注销（个保法删除权）与数据导出（个保法可携带权）：
- * - 注销：级联删除用户全部个人数据（文章/评论/点赞/收藏/关注/通知/反馈/举报/AI 用量等）
- * - 导出：返回用户档案与内容数据 JSON，由前端提供下载
+ * 账号注销（个保法删除权）与数据导出（个保法可携带权）： - 注销：级联删除用户全部个人数据（文章/评论/点赞/收藏/关注/通知/反馈/举报/AI 用量等） - 导出：返回用户档案与内容数据 JSON，由前端提供下载
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/21
  */
 @Service
 public class AccountService {
@@ -71,8 +78,23 @@ public class AccountService {
         this.aiUsageMapper = aiUsageMapper;
     }
 
+    /**
+     * 注销账号：级联删除用户全部个人数据
+     * （举报记录、通知、评论、文章及其点赞/收藏/评论/通知/标签关联、
+     * 社交关系、反馈、密码重置令牌、AI 用量记录，最后删除用户本体）
+     *
+     * @param userId 用户ID
+     */
     @Transactional
     public void deleteAccount(Integer userId) {
+        User user = userMapper.findById(userId);
+        if (user == null) {
+            return;
+        }
+        List<String> uploads = new ArrayList<>();
+        uploads.add(user.getAvatarUrl());
+        uploads.addAll(articleMapper.findCoverUrlsByUserId(userId));
+
         // 1. 举报记录（举报人维度）
         reportMapper.deleteByReporterId(userId);
         // 2. 通知（接收 + 发出的通知）
@@ -100,10 +122,69 @@ public class AccountService {
         aiUsageMapper.deleteByUserId(userId);
         // 8. 用户本体
         userMapper.deleteById(userId);
+        // 9. 事务提交后删除头像/封面文件，避免 DB 回滚时文件已丢失
+        deleteUploadsAfterCommit(uploads, userId);
         AuditLogger.log("ACCOUNT_DELETED", "userId=" + userId + ", articles=" + articleIds.size());
         log.info("账号注销完成: userId={}, 删除文章 {} 篇", userId, articleIds.size());
     }
 
+    private void deleteUploadsAfterCommit(List<String> uploads, Integer userId) {
+        Runnable task = () -> {
+            uploads.forEach(this::deleteUploadedFile);
+            // 历史头像/封面上传可能已不在 DB 中，按文件名前缀一并清理
+            deleteUserUploadsByPrefix(userId);
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    task.run();
+                }
+            });
+        } else {
+            task.run();
+        }
+    }
+
+    private void deleteUserUploadsByPrefix(Integer userId) {
+        File dir = new File("uploads");
+        File[] files = dir.listFiles((d, name) ->
+                name.startsWith("avatar_" + userId + "_") || name.startsWith("cover_" + userId + "_"));
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            try {
+                Files.deleteIfExists(file.toPath());
+            } catch (IOException e) {
+                log.warn("删除历史上传文件失败: {}", file.getName(), e);
+            }
+        }
+    }
+
+    private void deleteUploadedFile(String url) {
+        if (url == null || !url.startsWith("/uploads/")) {
+            return;
+        }
+        String filename = url.substring("/uploads/".length());
+        if (filename.isBlank() || filename.contains("..")
+                || filename.contains("/") || filename.contains("\\")) {
+            log.warn("拒绝删除非法上传路径: {}", url);
+            return;
+        }
+        try {
+            Files.deleteIfExists(new File("uploads", filename).toPath());
+        } catch (IOException e) {
+            log.warn("删除上传文件失败: {}", url, e);
+        }
+    }
+
+    /**
+     * 导出个人数据（个保法可携带权）：档案、文章摘要、评论、反馈、社交统计
+     *
+     * @param userId 用户ID
+     * @return 个人数据 Map（用户不存在返回空 Map）
+     */
     public Map<String, Object> exportData(Integer userId) {
         User user = userMapper.findById(userId);
         Map<String, Object> data = new LinkedHashMap<>();

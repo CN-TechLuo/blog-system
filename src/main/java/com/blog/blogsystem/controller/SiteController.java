@@ -11,6 +11,9 @@ import java.util.Map;
 
 /**
  * 站点公共配置接口（无需登录）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/19
  */
 @RestController
 @RequestMapping("/api/site")

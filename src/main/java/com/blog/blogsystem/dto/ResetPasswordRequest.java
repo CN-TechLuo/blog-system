@@ -6,6 +6,12 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+/**
+ * 重置密码请求（令牌 + 新密码）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Data
 public class ResetPasswordRequest {
 

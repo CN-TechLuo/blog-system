@@ -17,6 +17,12 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.stream.Collectors;
 
+/**
+ * 通知业务实现：点赞/评论/关注自动生成通知
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Service
 public class NotificationServiceImpl implements NotificationService {
 

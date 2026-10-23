@@ -12,6 +12,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 社交互动接口：关注/取关、点赞/取消、收藏/取消
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @RestController
 @RequestMapping("/api/social")
 public class SocialController {

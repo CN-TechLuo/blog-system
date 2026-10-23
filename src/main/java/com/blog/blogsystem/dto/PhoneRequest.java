@@ -4,6 +4,12 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
+/**
+ * 绑定手机号请求
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Data
 public class PhoneRequest {
 

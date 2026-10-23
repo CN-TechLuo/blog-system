@@ -4,6 +4,8 @@ import com.blog.blogsystem.dto.ApiResponse;
 import com.blog.blogsystem.dto.ForgotPasswordRequest;
 import com.blog.blogsystem.dto.ResetPasswordRequest;
 import com.blog.blogsystem.service.PasswordRecoveryService;
+import com.blog.blogsystem.util.ClientIpResolver;
+import com.blog.blogsystem.util.MaskUtil;
 import com.blog.blogsystem.util.RateLimiterUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,6 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 账号找回与密码重置接口（带 IP+账号维度限流）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @RestController
 @RequestMapping("/api/user")
 @Tag(name = "账号找回", description = "找回账号与密码重置")
@@ -28,12 +36,15 @@ public class PasswordRecoveryController {
     private static final Logger log = LoggerFactory.getLogger(PasswordRecoveryController.class);
 
     private final PasswordRecoveryService recoveryService;
+    private final ClientIpResolver clientIpResolver;
 
     /** 每个 IP+账号 每分钟最多尝试次数 */
     private static final int MAX_RECOVERY_PER_MINUTE = 3;
 
-    public PasswordRecoveryController(PasswordRecoveryService recoveryService) {
+    public PasswordRecoveryController(PasswordRecoveryService recoveryService,
+                                      ClientIpResolver clientIpResolver) {
         this.recoveryService = recoveryService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/forgot-username")
@@ -44,10 +55,10 @@ public class PasswordRecoveryController {
         if (email.isBlank() || !email.matches("^[\\w.-]+@[\\w.-]+\\.[A-Za-z]{2,}$")) {
             return ResponseEntity.badRequest().body(ApiResponse.fail("请输入正确的邮箱地址"));
         }
-        String ip = request.getRemoteAddr();
+        String ip = clientIpResolver.resolve(request);
         String key = "find:" + ip + ":" + email.trim().toLowerCase();
         if (RateLimiterUtil.isBlocked(key, MAX_RECOVERY_PER_MINUTE)) {
-            log.warn("找回账号速率限制触发: IP={}, email={}", ip, email);
+            log.warn("找回账号速率限制触发: IP={}, email={}", ip, MaskUtil.maskEmail(email));
             return ResponseEntity.status(429).body(ApiResponse.fail("操作过于频繁，请稍后重试"));
         }
         ApiResponse<List<String>> result = recoveryService.findUsernamesByEmail(email.trim());
@@ -58,11 +69,12 @@ public class PasswordRecoveryController {
     @Operation(summary = "申请密码重置")
     public ResponseEntity<ApiResponse<Map<String, Object>>> forgotPassword(HttpServletRequest request,
                                                                             @Valid @RequestBody ForgotPasswordRequest req) {
-        String ip = request.getRemoteAddr();
+        String ip = clientIpResolver.resolve(request);
         String account = req.getAccount() == null ? "" : req.getAccount().trim();
         String key = "reset:" + ip + ":" + account;
         if (RateLimiterUtil.isBlocked(key, MAX_RECOVERY_PER_MINUTE)) {
-            log.warn("密码重置申请速率限制触发: IP={}, account={}", ip, account);
+            log.warn("密码重置申请速率限制触发: IP={}, account={}", ip,
+                    account.contains("@") ? MaskUtil.maskEmail(account) : MaskUtil.maskUsername(account));
             return ResponseEntity.status(429).body(ApiResponse.fail("操作过于频繁，请稍后重试"));
         }
         ApiResponse<Map<String, Object>> result = recoveryService.requestReset(req);
@@ -73,7 +85,7 @@ public class PasswordRecoveryController {
     @Operation(summary = "重置密码")
     public ResponseEntity<ApiResponse<Void>> resetPassword(HttpServletRequest request,
                                                              @Valid @RequestBody ResetPasswordRequest req) {
-        String ip = request.getRemoteAddr();
+        String ip = clientIpResolver.resolve(request);
         String tokenKey = req.getToken() == null ? "" : req.getToken().trim().substring(0, Math.min(16, req.getToken().trim().length()));
         String key = "resetpwd:" + ip + ":" + tokenKey;
         if (RateLimiterUtil.isBlocked(key, MAX_RECOVERY_PER_MINUTE)) {

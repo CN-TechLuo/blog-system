@@ -8,6 +8,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 内存验证码存储（单机部署）。多实例部署请切换 CAPTCHA_STORE=redis。
+ *
+ * @author CN-TechLuo
+ * @date 2026/09/01
  */
 public class InMemoryCaptchaStore implements CaptchaStore {
 

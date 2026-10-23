@@ -20,11 +20,18 @@ import com.blog.blogsystem.util.SensitiveWordFilter;
 import com.blog.blogsystem.util.XssUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.util.Locale;
 
+/**
+ * 用户服务实现：注册/登录（锁定/限流/验证码）、刷新令牌（tokenVersion 校验）、改密
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Service
 public class UserServiceImpl implements UserService {
 
@@ -33,16 +40,15 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final CaptchaService captchaService;
 
-    /** 登录限流：单账号 5 次/分钟，单 IP 30 次/分钟（缓解反代共享 IP 误伤） */
+    /** 登录限流：单 IP+账号 5 次/分钟，单 IP 30 次/分钟，单账号 10 次/分钟 */
     private static final int MAX_LOGIN_PER_MINUTE = 5;
     private static final int MAX_LOGIN_PER_IP_MINUTE = 30;
+    private static final int MAX_LOGIN_PER_ACCOUNT_MINUTE = 10;
     /** 注册限流：单账号名 3 次/分钟，单 IP 20 次/分钟 */
     private static final int MAX_REGISTER_PER_MINUTE = 3;
     private static final int MAX_REGISTER_PER_IP_MINUTE = 20;
 
-    /** 登录失败锁定：连续失败 5 次锁定 15 分钟（DB 持久化，重启不失效） */
-    private static final int MAX_FAILED_ATTEMPTS = 5;
-    private static final int LOCK_MINUTES = 15;
+    private static final String GENERIC_REGISTER_FAIL = "注册失败，请检查输入或稍后重试";
 
     public UserServiceImpl(UserMapper userMapper, CaptchaService captchaService) {
         this.userMapper = userMapper;
@@ -68,12 +74,26 @@ public class UserServiceImpl implements UserService {
             return ApiResponse.fail("用户名或昵称包含违规词汇");
         }
 
+        if (request.getPhone() != null && !request.getPhone().isBlank()) {
+            return ApiResponse.fail("手机号绑定需短信验证，当前未开放");
+        }
+
         User existUser = userMapper.findByUsername(request.getUsername());
         if (existUser != null) {
             log.info("注册失败: 用户名 {} 已存在", request.getUsername());
-            return ApiResponse.fail("用户名已存在，注册失败");
+            return ApiResponse.fail(GENERIC_REGISTER_FAIL);
         }
 
+        String email = request.getEmail() != null && !request.getEmail().isBlank()
+                ? request.getEmail().trim().toLowerCase(Locale.ROOT) : null;
+        if (email != null && !userMapper.findByEmail(email).isEmpty()) {
+            log.info("注册失败: 邮箱已被使用");
+            return ApiResponse.fail(GENERIC_REGISTER_FAIL);
+        }
+
+        if (!PasswordUtil.isBcryptCompatible(request.getPassword())) {
+            return ApiResponse.fail("密码过长，UTF-8 编码后不能超过 72 字节");
+        }
         String encodedPassword = PasswordUtil.encode(request.getPassword());
 
         User user = new User();
@@ -81,18 +101,24 @@ public class UserServiceImpl implements UserService {
         user.setNickname(request.getNickname() != null && !request.getNickname().isBlank()
                 ? XssUtil.escape(request.getNickname().trim()) : null);
         user.setPassword(encodedPassword);
-        user.setEmail(request.getEmail() != null && !request.getEmail().isBlank()
-                ? request.getEmail().trim() : null);
-        user.setPhone(request.getPhone() != null && !request.getPhone().isBlank()
-                ? request.getPhone().trim() : null);
-        int rows = userMapper.insert(user);
+        user.setEmail(email);
+        // M4：手机号未经过短信 OTP 验证，注册阶段一律不落库
+        user.setPhone(null);
+
+        int rows;
+        try {
+            rows = userMapper.insert(user);
+        } catch (DuplicateKeyException e) {
+            log.info("注册失败: 唯一键冲突 username={}", request.getUsername());
+            return ApiResponse.fail(GENERIC_REGISTER_FAIL);
+        }
 
         log.info("注册结果: username={}, rows={}", request.getUsername(), rows);
 
         if (rows > 0) {
             return ApiResponse.success("注册成功");
         }
-        return ApiResponse.fail("注册失败，请稍后重试");
+        return ApiResponse.fail(GENERIC_REGISTER_FAIL);
     }
 
     @Override
@@ -100,38 +126,23 @@ public class UserServiceImpl implements UserService {
         if (!captchaService.verify(request.getCaptchaId(), request.getCaptchaAnswer())) {
             return ApiResponse.fail("验证码错误或已过期");
         }
+        String loginKey = request.getUsername() == null ? "" : request.getUsername().trim().toLowerCase(Locale.ROOT);
         if (RateLimiterUtil.isBlocked("login:ip:" + clientIp, MAX_LOGIN_PER_IP_MINUTE)
-                || RateLimiterUtil.isBlocked("login:acc:" + clientIp + ":" + request.getUsername(), MAX_LOGIN_PER_MINUTE)) {
+                || RateLimiterUtil.isBlocked("login:acc:" + clientIp + ":" + loginKey, MAX_LOGIN_PER_MINUTE)
+                || RateLimiterUtil.isBlocked("login:acct:" + loginKey, MAX_LOGIN_PER_ACCOUNT_MINUTE)) {
             log.warn("登录速率限制触发: IP={}, username={}", clientIp, request.getUsername());
             return ApiResponse.fail("登录请求过于频繁，请稍后重试");
         }
 
         log.debug("收到登录请求: username={}", request.getUsername());
 
-        User user;
-        if (request.getUsername() != null && request.getUsername().matches("\\d{11}")) {
-            user = userMapper.findByPhone(request.getUsername());
-        } else {
-            user = userMapper.findByUsername(request.getUsername());
-        }
-
-        // 账号锁定检查（DB 持久化）
-        if (user != null && user.getLockedUntil() != null
-                && user.getLockedUntil().isAfter(LocalDateTime.now())) {
-            AuditLogger.log("LOGIN_LOCKED", "ip=" + clientIp + ", username=" + request.getUsername());
-            return ApiResponse.fail("连续失败次数过多，账号已锁定至 "
-                    + user.getLockedUntil().toString().replace('T', ' ') + "，请稍后再试");
-        }
+        // M4：手机号需短信 OTP 验证后才可用于登录，当前仅支持用户名
+        User user = userMapper.findByUsername(request.getUsername());
 
         if (user == null || !PasswordUtil.matches(request.getPassword(), user.getPassword())) {
             if (user != null) {
                 userMapper.incrementFailedAttempts(user.getId());
                 int attempts = (user.getFailedAttempts() == null ? 0 : user.getFailedAttempts()) + 1;
-                if (attempts >= MAX_FAILED_ATTEMPTS) {
-                    userMapper.lockUser(user.getId(), LocalDateTime.now().plusMinutes(LOCK_MINUTES));
-                    AuditLogger.log("ACCOUNT_LOCKED", "ip=" + clientIp + ", username=" + request.getUsername());
-                    return ApiResponse.fail("连续失败次数过多，账号已锁定 " + LOCK_MINUTES + " 分钟");
-                }
                 AuditLogger.log("LOGIN_FAIL", "ip=" + clientIp + ", username=" + request.getUsername()
                         + ", failCount=" + attempts);
             } else {
@@ -139,6 +150,7 @@ public class UserServiceImpl implements UserService {
                         + ", reason=user_not_found");
             }
             log.info("登录失败: username={}", request.getUsername());
+            // M3：不暴露账号是否存在、是否被锁定、精确解锁时间
             return ApiResponse.fail("用户名或密码错误");
         }
 
@@ -146,8 +158,9 @@ public class UserServiceImpl implements UserService {
             userMapper.clearFailedAttempts(user.getId());
         }
 
-        String accessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername());
-        String refreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), user.getTokenVersion() != null ? user.getTokenVersion() : 0);
+        int tokenVersion = user.getTokenVersion() != null ? user.getTokenVersion() : 0;
+        String accessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername(), tokenVersion);
+        String refreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), tokenVersion);
 
         AuditLogger.log("LOGIN_SUCCESS", "userId=" + user.getId() + ", username=" + user.getUsername()
                 + ", ip=" + clientIp);
@@ -168,6 +181,10 @@ public class UserServiceImpl implements UserService {
             return ApiResponse.fail("refreshToken 不能为空");
         }
 
+        if (!JwtUtil.isRefreshToken(request.getRefreshToken())) {
+            return ApiResponse.fail("refreshToken 无效或已过期");
+        }
+
         Integer userId = JwtUtil.getUserIdFromToken(request.getRefreshToken());
         if (userId == null) {
             return ApiResponse.fail("refreshToken 无效或已过期");
@@ -178,7 +195,10 @@ public class UserServiceImpl implements UserService {
             return ApiResponse.fail("用户不存在");
         }
 
-        int tokenVersionInToken = JwtUtil.getTokenVersionFromToken(request.getRefreshToken());
+        Integer tokenVersionInToken = JwtUtil.getTokenVersionFromToken(request.getRefreshToken());
+        if (tokenVersionInToken == null) {
+            return ApiResponse.fail("refreshToken 无效或已过期");
+        }
         int currentVersion = user.getTokenVersion() != null ? user.getTokenVersion() : 0;
         if (tokenVersionInToken != currentVersion) {
             log.warn("Refresh token 版本不匹配，已被失效: userId={}, tokenVersion={}, currentVersion={}",
@@ -190,7 +210,7 @@ public class UserServiceImpl implements UserService {
         // 旋转刷新：每次刷新递增 tokenVersion，旧 refresh token 立即失效（防重放）
         int newVersion = currentVersion + 1;
         userMapper.incrementTokenVersion(userId);
-        String newAccessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername());
+        String newAccessToken = JwtUtil.generateAccessToken(user.getId(), user.getUsername(), newVersion);
         String newRefreshToken = JwtUtil.generateRefreshToken(user.getId(), user.getUsername(), newVersion);
 
         RefreshTokenResponse data = new RefreshTokenResponse();
@@ -232,6 +252,9 @@ public class UserServiceImpl implements UserService {
             return ApiResponse.fail("原密码错误");
         }
 
+        if (!PasswordUtil.isBcryptCompatible(request.getNewPassword())) {
+            return ApiResponse.fail("新密码过长，UTF-8 编码后不能超过 72 字节");
+        }
         String newEncoded = PasswordUtil.encode(request.getNewPassword());
         userMapper.updatePassword(userId, newEncoded);
         userMapper.incrementTokenVersion(userId);

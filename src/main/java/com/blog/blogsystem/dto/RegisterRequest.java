@@ -8,12 +8,20 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * 注册请求（含图形验证码字段）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Setter
 @Getter
 public class RegisterRequest {
 
     @NotBlank(message = "用户名不能为空")
     @Size(min = 2, max = 20, message = "用户名长度需在2-20位之间")
+    @Pattern(regexp = "^[\\p{L}\\p{N}_-]{2,20}$",
+             message = "用户名只能包含中文、字母、数字、下划线或连字符")
     private String username;
 
     @Size(max = 30, message = "昵称长度不能超过30位")

@@ -11,13 +11,14 @@ import com.blog.blogsystem.service.PasswordRecoveryService;
 import com.blog.blogsystem.util.AuditLogger;
 import com.blog.blogsystem.util.MaskUtil;
 import com.blog.blogsystem.util.PasswordUtil;
+import com.blog.blogsystem.util.RateLimiterUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,13 +26,18 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 密码找回实现：令牌 SHA-256 哈希存储、仅邮件投递重置链接、防账号枚举
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Service
 public class PasswordRecoveryServiceImpl implements PasswordRecoveryService {
 
@@ -42,7 +48,6 @@ public class PasswordRecoveryServiceImpl implements PasswordRecoveryService {
     private final UserMapper userMapper;
     private final PasswordResetTokenMapper tokenMapper;
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
-    private final Environment environment;
 
     @Value("${spring.mail.host:}")
     private String mailHost;
@@ -52,50 +57,67 @@ public class PasswordRecoveryServiceImpl implements PasswordRecoveryService {
 
     public PasswordRecoveryServiceImpl(UserMapper userMapper,
                                         PasswordResetTokenMapper tokenMapper,
-                                        ObjectProvider<JavaMailSender> mailSenderProvider,
-                                        Environment environment) {
+                                        ObjectProvider<JavaMailSender> mailSenderProvider) {
         this.userMapper = userMapper;
         this.tokenMapper = tokenMapper;
         this.mailSenderProvider = mailSenderProvider;
-        this.environment = environment;
     }
 
     @Override
     public ApiResponse<List<String>> findUsernamesByEmail(String email) {
-        List<User> users = userMapper.findByEmail(email);
-        if (users.isEmpty()) {
-            return ApiResponse.success("查询成功", List.of());
+        // M3：账号提示只发往邮箱本身，响应恒为空列表，避免通过返回内容枚举账号
+        List<User> users = userMapper.findByEmail(email.trim().toLowerCase(Locale.ROOT));
+        if (!users.isEmpty() && isMailConfigured()) {
+            try {
+                StringBuilder body = new StringBuilder("您的账号：\n");
+                for (User u : users) {
+                    body.append(u.getUsername()).append('\n');
+                }
+                body.append("\n若非本人操作，请忽略此邮件。");
+                SimpleMailMessage mail = new SimpleMailMessage();
+                mail.setTo(email);
+                mail.setSubject("【智能博客】账号找回");
+                mail.setText(body.toString());
+                mailSenderProvider.getIfAvailable().send(mail);
+                AuditLogger.log("USERNAME_REMINDER_SENT", "count=" + users.size());
+            } catch (Exception e) {
+                log.error("账号提示邮件发送失败: error={}", e.getMessage());
+            }
         }
-        List<String> masked = new ArrayList<>();
-        for (User u : users) {
-            masked.add(MaskUtil.maskUsername(u.getUsername()));
-        }
-        return ApiResponse.success("查询成功", masked);
+        return ApiResponse.success("如果该邮箱已注册，账号提示已发送", List.of());
     }
 
     @Override
     @Transactional
     public ApiResponse<Map<String, Object>> requestReset(ForgotPasswordRequest request) {
-        String account = request.getAccount().trim();
-        String verify = request.getVerify().trim();
+        String account = request.getAccount() == null ? "" : request.getAccount().trim();
 
-        User user;
-        if (account.matches("\\d{11}")) {
-            user = userMapper.findByPhone(account);
-        } else {
-            user = userMapper.findByUsername(account);
+        // 无论账号是否存在、是否绑定邮箱、邮件是否发送成功，响应体完全一致，防止账号枚举
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("expiresInMinutes", TOKEN_EXPIRE_MINUTES);
+        result.put("emailSent", true);
+        String genericMessage = "如果账号存在且已绑定邮箱，重置链接已发送";
+
+        User user = userMapper.findByUsername(account);
+        if (user == null && account.contains("@")) {
+            List<User> byEmail = userMapper.findByEmail(account.toLowerCase(Locale.ROOT));
+            user = byEmail.isEmpty() ? null : byEmail.get(0);
+        }
+        if (user == null || user.getEmail() == null || user.getEmail().isBlank()) {
+            AuditLogger.log("RESET_REQUEST_IGNORED", "account="
+                    + (account.contains("@") ? MaskUtil.maskEmail(account) : MaskUtil.maskUsername(account)));
+            return ApiResponse.success(genericMessage, result);
         }
 
-        // 防账号枚举：账号不存在或校验信息不匹配时返回统一提示，不区分具体原因
-        if (user == null) {
-            AuditLogger.log("RESET_REQUEST_UNKNOWN", "account=" + account);
-            return ApiResponse.success("如果账号存在，重置指引已处理", Map.of("emailSent", false));
+        // 同一账号每分钟最多申请 3 次，防止借找回接口轰炸邮箱/消耗资源
+        if (RateLimiterUtil.isBlocked("reset:user:" + user.getId(), 3)) {
+            AuditLogger.log("RESET_RATE_LIMITED", "userId=" + user.getId());
+            return ApiResponse.success(genericMessage, result);
         }
 
-        boolean verified = verify.equals(user.getEmail()) || verify.equals(user.getPhone());
-        if (!verified) {
-            AuditLogger.log("RESET_VERIFY_FAIL", "userId=" + user.getId() + ", account=" + account);
-            return ApiResponse.success("如果账号存在，重置指引已处理", Map.of("emailSent", false));
+        if (!isMailConfigured()) {
+            log.error("SMTP 未配置，密码重置邮件无法发送: userId={}", user.getId());
+            return ApiResponse.success(genericMessage, result);
         }
 
         tokenMapper.invalidateAllForUser(user.getId());
@@ -110,46 +132,42 @@ public class PasswordRecoveryServiceImpl implements PasswordRecoveryService {
         entity.setTokenHash(tokenHash);
         entity.setExpiresAt(LocalDateTime.now().plusMinutes(TOKEN_EXPIRE_MINUTES));
         tokenMapper.insert(entity);
-        AuditLogger.log("RESET_REQUESTED", "userId=" + user.getId() + ", account=" + account);
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("expiresInMinutes", TOKEN_EXPIRE_MINUTES);
-
-        if (mailHost != null && !mailHost.isBlank()) {
-            try {
-                JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
-                if (mailSender != null) {
-                    SimpleMailMessage mail = new SimpleMailMessage();
-                    mail.setTo(user.getEmail());
-                    mail.setSubject("【智能博客】密码重置");
-                    mail.setText("您好 " + user.getUsername() + "：\n\n"
-                            + "请在 " + TOKEN_EXPIRE_MINUTES + " 分钟内通过以下链接重置密码：\n"
-                            + resetPasswordUrl + "?token=" + token + "\n\n"
-                            + "若非本人操作，请忽略此邮件。");
-                    mailSender.send(mail);
-                    result.put("emailSent", true);
-                    return ApiResponse.success("重置链接已发送至绑定邮箱", result);
-                }
-            } catch (Exception e) {
-                log.warn("重置邮件发送失败，降级为响应返回: {}", e.getMessage());
-            }
+        try {
+            JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
+            SimpleMailMessage mail = new SimpleMailMessage();
+            mail.setTo(user.getEmail());
+            mail.setSubject("【智能博客】密码重置");
+            mail.setText("您好 " + user.getUsername() + "：\n\n"
+                    + "请在 " + TOKEN_EXPIRE_MINUTES + " 分钟内通过以下链接重置密码：\n"
+                    + resetPasswordUrl + "?token=" + token + "\n\n"
+                    + "若非本人操作，请忽略此邮件。");
+            mailSender.send(mail);
+            AuditLogger.log("RESET_REQUESTED", "userId=" + user.getId() + ", channel=email");
+            log.info("密码重置邮件已发送: userId={}", user.getId());
+        } catch (Exception e) {
+            log.error("重置邮件发送失败: userId={}, error={}", user.getId(), e.getMessage());
         }
 
-        result.put("emailSent", false);
-        if (!isDevEnvironment()) {
-            // 生产环境 SMTP 未配置时绝不通过 API 返回令牌，防止账号接管
-            log.error("SMTP 未配置且非开发环境，拒绝返回重置令牌: userId={}", user.getId());
-            return ApiResponse.fail("邮件服务未配置，请联系管理员");
-        }
-        result.put("token", token);
-        log.warn("SMTP 未配置，重置令牌通过响应返回（仅限开发环境）: userId={}", user.getId());
-        return ApiResponse.success("SMTP 未配置，重置令牌已返回（开发模式）", result);
+        // 令牌只经邮件传递，任何情况下都不进入响应体
+        return ApiResponse.success(genericMessage, result);
     }
 
-    private boolean isDevEnvironment() {
-        String[] profiles = environment.getActiveProfiles();
-        return Arrays.stream(profiles)
-                .anyMatch(p -> p.equalsIgnoreCase("dev") || p.equalsIgnoreCase("local") || p.equalsIgnoreCase("test"));
+    private boolean isMailConfigured() {
+        return mailHost != null && !mailHost.isBlank()
+                && mailSenderProvider.getIfAvailable() != null;
+    }
+
+    @Scheduled(fixedRate = 3_600_000)
+    public void cleanExpiredTokens() {
+        try {
+            int deleted = tokenMapper.deleteExpired();
+            if (deleted > 0) {
+                log.info("清理过期密码重置令牌: {} 条", deleted);
+            }
+        } catch (Exception e) {
+            log.warn("清理过期密码重置令牌失败", e);
+        }
     }
 
     @Override
@@ -173,6 +191,9 @@ public class PasswordRecoveryServiceImpl implements PasswordRecoveryService {
             return ApiResponse.fail("用户不存在");
         }
 
+        if (!PasswordUtil.isBcryptCompatible(request.getNewPassword())) {
+            return ApiResponse.fail("新密码过长，UTF-8 编码后不能超过 72 字节");
+        }
         userMapper.updatePassword(user.getId(), PasswordUtil.encode(request.getNewPassword()));
         userMapper.incrementTokenVersion(user.getId());
         tokenMapper.markUsed(token.getId());

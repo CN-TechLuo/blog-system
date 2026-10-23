@@ -1,11 +1,14 @@
 package com.blog.blogsystem.util;
 
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 import org.jsoup.safety.Safelist;
 
 /**
- * XSS 过滤工具类
- * 对用户输入的 HTML 特殊字符进行转义，防止存储型 XSS 攻击
+ * XSS 过滤工具类 对用户输入的 HTML 特殊字符进行转义，防止存储型 XSS 攻击
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 public class XssUtil {
 
@@ -44,7 +47,12 @@ public class XssUtil {
         if (input == null || input.isEmpty()) {
             return input;
         }
-        return Jsoup.clean(input, Safelist.basicWithImages()
+        // Jsoup 只允许 http/https 协议；先把本站 /uploads/ 临时映射为允许的绝对地址，
+        // 清洗后再还原并严格校验文件名，避免相对路径被整体丢弃。
+        String normalized = input.replaceAll(
+                "(?i)(src\\s*=\\s*[\"']?)/uploads/", "$1https://local.invalid/uploads/");
+
+        String cleaned = Jsoup.clean(normalized, Safelist.basicWithImages()
                 .addTags("h1", "h2", "h3", "h4", "h5", "h6", "pre", "code", "blockquote", "hr", "table", "thead", "tbody", "tr", "th", "td", "span", "div")
                 .addAttributes("a", "target", "rel")
                 .addAttributes("img", "width", "height")
@@ -55,6 +63,18 @@ public class XssUtil {
                 .addAttributes("td", "colspan", "rowspan")
                 .addAttributes("th", "colspan", "rowspan")
                 .addProtocols("a", "href", "http", "https", "mailto"));
+
+        // 强制外链带 rel=noopener noreferrer，防止 window.opener 反向导航/钓鱼
+        Document document = Jsoup.parseBodyFragment(
+                cleaned.replace("https://local.invalid/uploads/", "/uploads/"));
+        document.select("a[href]").attr("rel", "noopener noreferrer");
+        // 只允许本站 uploads 图片（严格文件名），阻止外链图片追踪读者 IP/UA/Referer
+        document.select("img[src]").forEach(img -> {
+            if (!img.attr("src").matches("/uploads/[A-Za-z0-9._-]+")) {
+                img.remove();
+            }
+        });
+        return document.body().html();
     }
 
 }

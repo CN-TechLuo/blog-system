@@ -1,5 +1,7 @@
 package com.blog.blogsystem.config;
 
+import com.blog.blogsystem.entity.User;
+import com.blog.blogsystem.mapper.UserMapper;
 import com.blog.blogsystem.service.TokenBlacklistService;
 import com.blog.blogsystem.util.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,11 +13,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
- * JWT 认证拦截器，统一提取当前用户 ID 并存入 request attribute。
- * - 非 GET 的受保护路径：必须携带有效 token，否则拒绝
- * - /api/article/** 的 GET 请求：公开放行；若携带有效 token 则解析出
- *   userId 存入 request attribute（用于点赞/收藏状态回显），无效则忽略
- * - 登出后 jti 进入黑名单的 token 一律拒绝
+ * JWT 认证拦截器，统一提取当前用户 ID 并存入 request attribute。 - 非 GET 的受保护路径：必须携带有效 token，否则拒绝 - /api/article/** 的 GET 请求：公开放行；若携带有效 token 则解析出   userId 存入 request attribute（用于点赞/收藏状态回显），无效则忽略 - 登出后 jti 进入黑名单的 token 一律拒绝
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 @Component
 public class AuthInterceptor implements HandlerInterceptor {
@@ -23,9 +24,11 @@ public class AuthInterceptor implements HandlerInterceptor {
     private static final Logger log = LoggerFactory.getLogger(AuthInterceptor.class);
 
     private final TokenBlacklistService tokenBlacklistService;
+    private final UserMapper userMapper;
 
-    public AuthInterceptor(TokenBlacklistService tokenBlacklistService) {
+    public AuthInterceptor(TokenBlacklistService tokenBlacklistService, UserMapper userMapper) {
         this.tokenBlacklistService = tokenBlacklistService;
+        this.userMapper = userMapper;
     }
 
     @Override
@@ -43,7 +46,7 @@ public class AuthInterceptor implements HandlerInterceptor {
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 String token = authHeader.substring(7);
                 if (!isBlacklisted(token)) {
-                    Integer viewerId = JwtUtil.getUserIdFromToken(token);
+                    Integer viewerId = resolveActiveUserId(token);
                     if (viewerId != null) {
                         request.setAttribute("userId", viewerId);
                     }
@@ -59,18 +62,45 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
 
         String token = authHeader.substring(7);
-        Integer userId = JwtUtil.getUserIdFromToken(token);
-        if (userId == null) {
-            log.debug("Token 无效或已过期: {} {}", request.getMethod(), request.getRequestURI());
-            throw new AuthenticationException(HttpStatus.UNAUTHORIZED, "token 无效或已过期");
+        if (!JwtUtil.isAccessToken(token)) {
+            log.debug("拒绝非 access token: {} {}", request.getMethod(), request.getRequestURI());
+            throw new AuthenticationException(HttpStatus.UNAUTHORIZED, "token 类型错误");
         }
         if (isBlacklisted(token)) {
             log.debug("Token 已登出吊销: {} {}", request.getMethod(), request.getRequestURI());
             throw new AuthenticationException(HttpStatus.UNAUTHORIZED, "token 已失效，请重新登录");
         }
 
+        Integer userId = resolveActiveUserId(token);
+        if (userId == null) {
+            log.debug("Token 无效、已过期或已被撤销: {} {}", request.getMethod(), request.getRequestURI());
+            throw new AuthenticationException(HttpStatus.UNAUTHORIZED, "token 无效或已过期");
+        }
+
         request.setAttribute("userId", userId);
         return true;
+    }
+
+    private Integer resolveActiveUserId(String token) {
+        if (!JwtUtil.isAccessToken(token)) {
+            return null;
+        }
+        Integer userId = JwtUtil.getUserIdFromToken(token);
+        Integer tokenVersion = JwtUtil.getTokenVersionFromToken(token);
+        if (userId == null || tokenVersion == null) {
+            return null;
+        }
+        User user = userMapper.findById(userId);
+        if (user == null) {
+            return null;
+        }
+        int currentVersion = user.getTokenVersion() == null ? 0 : user.getTokenVersion();
+        if (tokenVersion != currentVersion) {
+            log.debug("Token 版本已失效: userId={}, tokenVersion={}, currentVersion={}",
+                    userId, tokenVersion, currentVersion);
+            return null;
+        }
+        return userId;
     }
 
     private boolean isBlacklisted(String token) {

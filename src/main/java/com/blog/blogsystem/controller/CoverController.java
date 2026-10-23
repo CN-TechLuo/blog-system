@@ -14,6 +14,12 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 文章封面图上传：base64 提交，服务端重编码剥离恶意载荷并降采样
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @RestController
 @RequestMapping("/api/cover")
 public class CoverController {
@@ -40,7 +46,7 @@ public class CoverController {
             }
             String ext = ImageUtil.detectImageType(bytes);
             if (ext == null) {
-                return ResponseEntity.badRequest().body(ApiResponse.fail("不支持的图片格式，仅支持 JPG/PNG/GIF/WEBP"));
+                return ResponseEntity.badRequest().body(ApiResponse.fail("不支持的图片格式，仅支持 JPG/PNG/GIF"));
             }
             // 服务端重编码，剥离 polyglot 载荷；长边超限降采样
             bytes = ImageUtil.sanitizeImage(bytes, ext, COVER_MAX_DIMENSION);

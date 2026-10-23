@@ -4,6 +4,9 @@ import org.springframework.http.HttpStatus;
 
 /**
  * 认证异常，AuthInterceptor 中抛出，由 GlobalExceptionHandler 统一处理
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 public class AuthenticationException extends RuntimeException {
 

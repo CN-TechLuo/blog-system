@@ -3,6 +3,7 @@ package com.blog.blogsystem.controller;
 import com.blog.blogsystem.dto.ApiResponse;
 import com.blog.blogsystem.entity.User;
 import com.blog.blogsystem.mapper.UserMapper;
+import com.blog.blogsystem.util.AuditLogger;
 import com.blog.blogsystem.util.RoleConst;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,8 +23,10 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 安全审计日志查询（管理员）
- * 读取本地 audit.log 尾部 N 行，倒序返回。
+ * 安全审计日志查询（管理员） 读取本地 audit.log 尾部 N 行，倒序返回。
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/19
  */
 @RestController
 @RequestMapping("/api/admin")
@@ -66,7 +69,7 @@ public class AuditLogController {
                 int b = raf.read();
                 if (b == '\n') {
                     if (current.length() > 0) {
-                        lines.add(current.reverse().toString());
+                        lines.add(AuditLogger.sanitize(current.reverse().toString()));
                         current.setLength(0);
                     }
                 } else {
@@ -75,7 +78,7 @@ public class AuditLogController {
                 pointer--;
             }
             if (current.length() > 0 && lines.size() < max) {
-                lines.add(current.reverse().toString());
+                lines.add(AuditLogger.sanitize(current.reverse().toString()));
             }
             Collections.reverse(lines);
         } catch (IOException e) {

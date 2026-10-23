@@ -6,6 +6,9 @@ import java.time.LocalDateTime;
 
 /**
  * 用户信息响应
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 @Data
 public class UserInfoResponse {

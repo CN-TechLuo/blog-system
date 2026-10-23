@@ -13,9 +13,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
- * 限流存储装配：
- * - app.rate-limit.store=memory（默认）：进程内内存，适合单机
- * - app.rate-limit.store=redis：多实例共享（生产推荐，docker-compose 已内置 redis 服务）
+ * 限流存储装配： - app.rate-limit.store=memory（默认）：进程内内存，适合单机 - app.rate-limit.store=redis：多实例共享（生产推荐，docker-compose 已内置 redis 服务）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/21
  */
 @Configuration
 public class RateLimitConfig {

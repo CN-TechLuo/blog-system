@@ -26,8 +26,9 @@ CREATE TABLE IF NOT EXISTS `user` (
   UNIQUE INDEX `idx_phone` (`phone`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
--- 管理员账号通过应用启动时自动提升（admin.bootstrap-username 配置，默认 username=admin），
--- 需先手动注册该用户名（密码自行设置，勿用弱口令）
+-- 管理员引导：先注册普通账号，再配置 ADMIN_BOOTSTRAP_TOKEN 并调用
+-- POST /api/bootstrap/admin（X-Bootstrap-Token + {"userId": <id>}），
+-- 系统已有管理员后接口自动关闭；不再按用户名自动提升。
 
 -- ============================================================
 -- 2. 文章表

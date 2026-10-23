@@ -1,21 +1,25 @@
 package com.blog.blogsystem.service;
 
 import com.blog.blogsystem.dto.CaptchaResponse;
-import com.blog.blogsystem.service.impl.InMemoryCaptchaStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Base64;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CaptchaServiceTest {
 
-    private CaptchaService service = new CaptchaService(new InMemoryCaptchaStore());
+    private static final String PNG_PREFIX = "data:image/png;base64,";
+
+    private final RecordingCaptchaStore store = new RecordingCaptchaStore();
+    private final CaptchaService service = new CaptchaService(store);
 
     @BeforeEach
     void setUp() {
@@ -23,28 +27,42 @@ class CaptchaServiceTest {
     }
 
     @Test
-    void generateThenVerifyCorrectAnswer() {
+    void generateReturnsPngDataUri() {
         CaptchaResponse r = service.generate();
-        assertNotNull(r.getCaptchaId());
-        assertTrue(r.getSvg().contains("svg"));
 
-        int expected = parseAnswer(r.getSvg());
-        assertTrue(service.verify(r.getCaptchaId(), String.valueOf(expected)), "正确答案应通过");
+        assertNotNull(r.getCaptchaId());
+        assertTrue(r.getSvg().startsWith(PNG_PREFIX));
+        byte[] png = Base64.getDecoder().decode(r.getSvg().substring(PNG_PREFIX.length()));
+        assertEquals((byte) 0x89, png[0]);
+        assertEquals('P', png[1]);
+        assertEquals('N', png[2]);
+        assertEquals('G', png[3]);
+        assertEquals(4, store.lastAnswer().length());
     }
 
     @Test
-    void captchaIsSingleUse() {
+    void generateThenVerifyCorrectAnswer() {
         CaptchaResponse r = service.generate();
-        int expected = parseAnswer(r.getSvg());
-        assertTrue(service.verify(r.getCaptchaId(), String.valueOf(expected)));
-        assertFalse(service.verify(r.getCaptchaId(), String.valueOf(expected)), "验证码只能使用一次");
+        String code = store.lastAnswer();
+
+        assertTrue(service.verify(r.getCaptchaId(), code));
+        assertFalse(service.verify(r.getCaptchaId(), code), "验证码只能使用一次");
+    }
+
+    @Test
+    void verifyIsCaseInsensitive() {
+        CaptchaResponse r = service.generate();
+        String code = store.lastAnswer();
+
+        assertTrue(service.verify(r.getCaptchaId(), code.toLowerCase()));
     }
 
     @Test
     void wrongAnswerRejected() {
         CaptchaResponse r = service.generate();
-        int expected = parseAnswer(r.getSvg());
-        assertFalse(service.verify(r.getCaptchaId(), String.valueOf(expected + 1)), "错误答案应拒绝");
+        String wrong = "ZZZZ".equals(store.lastAnswer()) ? "YYYY" : "ZZZZ";
+
+        assertFalse(service.verify(r.getCaptchaId(), wrong));
     }
 
     @Test
@@ -54,17 +72,34 @@ class CaptchaServiceTest {
     }
 
     @Test
-    void disabledCaptchaBypassesVerification() {
+    void disabledCaptchaRejectsVerification() {
         ReflectionTestUtils.setField(service, "enabled", false);
-        assertTrue(service.verify(null, null), "验证码关闭时直接通过");
+
+        assertFalse(service.verify(null, null), "验证码关闭时必须 fail-closed");
     }
 
-    private int parseAnswer(String svg) {
-        Matcher m = Pattern.compile("(\\d+) ([+\\-]) (\\d+) = \\?").matcher(svg);
-        assertTrue(m.find(), "SVG 应包含算术表达式");
-        int a = Integer.parseInt(m.group(1));
-        int b = Integer.parseInt(m.group(3));
-        return "+".equals(m.group(2)) ? a + b : a - b;
-    }
+    private static final class RecordingCaptchaStore implements CaptchaStore {
 
+        private final Map<String, String> answers = new ConcurrentHashMap<>();
+        private volatile String lastAnswer;
+
+        @Override
+        public void put(String captchaId, String answer, long ttlMs) {
+            answers.put(captchaId, answer);
+            lastAnswer = answer;
+        }
+
+        @Override
+        public String take(String captchaId) {
+            return answers.remove(captchaId);
+        }
+
+        @Override
+        public void cleanExpired() {
+        }
+
+        String lastAnswer() {
+            return lastAnswer;
+        }
+    }
 }

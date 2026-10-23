@@ -10,6 +10,7 @@ import com.blog.blogsystem.mapper.CommentMapper;
 import com.blog.blogsystem.mapper.UserMapper;
 import com.blog.blogsystem.service.CommentService;
 import com.blog.blogsystem.util.PageUtil;
+import com.blog.blogsystem.util.RateLimiterUtil;
 import com.blog.blogsystem.util.SensitiveWordFilter;
 import com.blog.blogsystem.util.XssUtil;
 import org.slf4j.Logger;
@@ -21,6 +22,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * 评论业务实现：敏感词审核、嵌套回复组装、计数维护
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Service
 public class CommentServiceImpl implements CommentService {
 
@@ -50,6 +57,12 @@ public class CommentServiceImpl implements CommentService {
     @Override
     @Transactional
     public ApiResponse<Long> create(Integer articleId, Integer userId, CommentCreateRequest request) {
+        if (RateLimiterUtil.isBlocked("comment:user:" + userId, 10)) {
+            return ApiResponse.fail("评论过于频繁，请稍后重试");
+        }
+        if (articleMapper.findById(articleId) == null) {
+            return ApiResponse.fail("文章不存在");
+        }
         if (SensitiveWordFilter.containsSensitive(request.getContent())) {
             return ApiResponse.fail("评论包含违规词汇，请修改后重试");
         }

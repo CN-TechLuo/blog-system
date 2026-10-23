@@ -12,9 +12,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
- * 验证码存储装配：
- * - app.captcha.store=memory（默认）：单机内存
- * - app.captcha.store=redis：多实例共享（生产推荐，与限流共用 redis 服务）
+ * 验证码存储装配： - app.captcha.store=memory（默认）：单机内存 - app.captcha.store=redis：多实例共享（生产推荐，与限流共用 redis 服务）
+ *
+ * @author CN-TechLuo
+ * @date 2026/09/01
  */
 @Configuration
 public class CaptchaConfig {

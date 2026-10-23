@@ -6,6 +6,7 @@ import com.blog.blogsystem.dto.ArticleUpdateRequest;
 import com.blog.blogsystem.dto.PageResponse;
 import com.blog.blogsystem.entity.Article;
 import com.blog.blogsystem.service.ArticleService;
+import com.blog.blogsystem.util.ClientIpResolver;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,6 +26,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 文章接口：发布/编辑/删除、分页列表、全文搜索、详情、热榜
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @RestController
 @RequestMapping("/api/article")
 @Tag(name = "文章管理", description = "文章 CRUD + 搜索")
@@ -33,9 +40,11 @@ public class ArticleController {
     private static final Logger log = LoggerFactory.getLogger(ArticleController.class);
 
     private final ArticleService articleService;
+    private final ClientIpResolver clientIpResolver;
 
-    public ArticleController(ArticleService articleService) {
+    public ArticleController(ArticleService articleService, ClientIpResolver clientIpResolver) {
         this.articleService = articleService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/create")
@@ -69,7 +78,7 @@ public class ArticleController {
     @Operation(summary = "文章详情")
     public ResponseEntity<ApiResponse<Article>> detail(HttpServletRequest request, @PathVariable Integer id) {
         Integer viewerId = (Integer) request.getAttribute("userId");
-        ApiResponse<Article> result = articleService.detail(id, viewerId, request.getRemoteAddr());
+        ApiResponse<Article> result = articleService.detail(id, viewerId, clientIpResolver.resolve(request));
         if (!result.isSuccess()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(result);
         }

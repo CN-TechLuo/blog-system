@@ -13,3 +13,10 @@ Dockerfile
 src/test/
 application-local.properties
 spring-devtools.properties
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+ops/backup.key

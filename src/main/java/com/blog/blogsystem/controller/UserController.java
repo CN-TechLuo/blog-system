@@ -15,6 +15,7 @@ import com.blog.blogsystem.service.AccountService;
 import com.blog.blogsystem.service.TokenBlacklistService;
 import com.blog.blogsystem.service.UserService;
 import com.blog.blogsystem.util.AuditLogger;
+import com.blog.blogsystem.util.ClientIpResolver;
 import com.blog.blogsystem.util.ImageUtil;
 import com.blog.blogsystem.util.JwtUtil;
 import com.blog.blogsystem.util.PasswordUtil;
@@ -27,6 +28,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,6 +44,12 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 用户接口：注册/登录/登出、资料修改、头像上传、账号注销、数据导出
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @RestController
 @RequestMapping("/api/user")
 @Tag(name = "用户管理", description = "注册、登录、个人信息")
@@ -53,14 +61,17 @@ public class UserController {
     private final UserMapper userMapper;
     private final TokenBlacklistService tokenBlacklistService;
     private final AccountService accountService;
+    private final ClientIpResolver clientIpResolver;
 
     public UserController(UserService userService, UserMapper userMapper,
                           TokenBlacklistService tokenBlacklistService,
-                          AccountService accountService) {
+                          AccountService accountService,
+                          ClientIpResolver clientIpResolver) {
         this.userService = userService;
         this.userMapper = userMapper;
         this.tokenBlacklistService = tokenBlacklistService;
         this.accountService = accountService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/register")
@@ -148,7 +159,7 @@ public class UserController {
         try {
             String ext = ImageUtil.detectImageType(imageBytes);
             if (ext == null) {
-                return ResponseEntity.badRequest().body(ApiResponse.fail("不支持的图片格式，仅支持 JPG/PNG/GIF/WEBP"));
+                return ResponseEntity.badRequest().body(ApiResponse.fail("不支持的图片格式，仅支持 JPG/PNG/GIF"));
             }
             // 服务端重编码，剥离 polyglot 载荷；头像长边限 512px
             imageBytes = ImageUtil.sanitizeImage(imageBytes, ext, 512);
@@ -185,19 +196,16 @@ public class UserController {
     }
 
     @PutMapping("/phone")
-    @Operation(summary = "绑定手机号")
+    @Operation(summary = "绑定手机号（当前未开放：需短信 OTP）")
     public ResponseEntity<ApiResponse<Void>> bindPhone(@RequestAttribute("userId") Integer userId,
                                                         @Valid @RequestBody PhoneRequest request) {
-        User existing = userMapper.findByPhone(request.getPhone());
-        if (existing != null && !existing.getId().equals(userId)) {
-            return ResponseEntity.badRequest().body(ApiResponse.fail("该手机号已被其他用户绑定"));
-        }
-        userMapper.updatePhone(userId, request.getPhone());
-        return ResponseEntity.ok(ApiResponse.success("手机号绑定成功"));
+        // M4：未接入短信 OTP 前不开放手机号绑定，避免抢注他人号码
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(ApiResponse.fail("手机号绑定需短信验证，当前未开放"));
     }
 
     private String getClientIp(HttpServletRequest request) {
-        return request.getRemoteAddr();
+        return clientIpResolver.resolve(request);
     }
 
     @GetMapping("/export-data")

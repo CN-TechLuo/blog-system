@@ -7,9 +7,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import java.time.Duration;
 
 /**
- * Redis 限流存储（多实例部署）：固定窗口（分钟 + 天），
- * 通过 INCR + EXPIRE 实现，键带 TTL 自动过期，无需清理任务。
- * 生产多副本环境必须使用本实现（配合 docker-compose 中的 redis 服务）。
+ * Redis 限流存储（多实例部署）：固定窗口（分钟 + 天）， 通过 INCR + EXPIRE 实现，键带 TTL 自动过期，无需清理任务。 生产多副本环境必须使用本实现（配合 docker-compose 中的 redis 服务）。
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/21
  */
 public class RedisRateLimitStore implements RateLimitStore {
 

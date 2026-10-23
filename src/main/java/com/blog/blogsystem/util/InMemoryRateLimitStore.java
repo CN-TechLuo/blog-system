@@ -6,8 +6,10 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 内存限流存储（单机部署）：滑动窗口（分钟 + 天），
- * 进程内有效，多实例部署请切换 RATE_LIMIT_STORE=redis。
+ * 内存限流存储（单机部署）：滑动窗口（分钟 + 天）， 进程内有效，多实例部署请切换 RATE_LIMIT_STORE=redis。
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/21
  */
 public class InMemoryRateLimitStore implements RateLimitStore {
 

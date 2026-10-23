@@ -15,6 +15,8 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: blog_db
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD}
+      DB_BACKUP_PASSWORD: ${DB_BACKUP_PASSWORD}
       TZ: Asia/Shanghai
     command:
       - --character-set-server=utf8mb4
@@ -24,6 +26,7 @@ services:
       - --log-output=TABLE
     volumes:
       - mysql-data:/var/lib/mysql
+      - ./ops/mysql-init:/docker-entrypoint-initdb.d:ro
     networks: [blog-net]
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
@@ -62,7 +65,8 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://blog.example.com}
       RESET_PASSWORD_URL: ${RESET_PASSWORD_URL:-https://blog.example.com/reset-password}
-      ADMIN_BOOTSTRAP_ENABLED: "false"
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
+      ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:-}
       RATE_LIMIT_STORE: redis
       REDIS_HOST: redis
       CAPTCHA_ENABLED: "true"
@@ -111,23 +115,29 @@ services:
     networks: [blog-net]
 
   backup:
-    image: fradelg/mysql-cron-backup
+    build:
+      context: .
+      dockerfile: ops/backup.Dockerfile
+    image: blog-backup:latest
     container_name: blog-backup
     restart: unless-stopped
     depends_on:
       mysql:
         condition: service_healthy
     environment:
-      MYSQL_HOST: mysql
-      MYSQL_USER: root
-      MYSQL_PASS: ${DB_PASSWORD}
-      MYSQL_DB: blog_db
-      MYSQLDUMP_OPTS: --single-transaction --quick
-      MAX_BACKUPS: 30
-      CRON_TIME: "30 2 * * *"
-      INIT_BACKUP: "1"
+      DB_HOST: mysql
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: blog_db
+      RETENTION_DAYS: "30"
+      BACKUP_KEY_FILE: /run/secrets/backup_key
       TZ: Asia/Shanghai
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs:
+      - /tmp
     volumes:
+      - ./ops/backup.key:/run/secrets/backup_key:ro
       - backup-data:/backup
     networks: [blog-net]
 

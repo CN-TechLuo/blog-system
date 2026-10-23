@@ -16,6 +16,9 @@ import java.util.stream.Collectors;
 
 /**
  * 全局异常处理器，统一处理 Controller 层抛出的异常
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {

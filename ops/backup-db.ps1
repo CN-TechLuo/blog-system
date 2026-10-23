@@ -2,13 +2,13 @@
 # 博客系统数据库 + 上传目录备份脚本
 # 用法: powershell -ExecutionPolicy Bypass -File ops\backup-db.ps1
 # 定时任务(Windows): schtasks /Create /TN BlogBackup /SC DAILY /ST 03:00
-#   /TR "powershell -ExecutionPolicy Bypass -File D:\IDE\xiangmu\blog-system\ops\backup-db.ps1"
+#   /TR "powershell -ExecutionPolicy Bypass -File C:\path\to\blog-system\ops\backup-db.ps1"
 # ============================================================
 
 $ErrorActionPreference = "Stop"
 
-# 备份目录（可修改）
-$BACKUP_DIR = Join-Path (Split-Path -Parent $PSScriptRoot) "backup"
+# 备份目录（默认放在用户目录，绝不要放在仓库内）
+$BACKUP_DIR = if ($env:BACKUP_DIR) { $env:BACKUP_DIR } else { Join-Path $env:USERPROFILE "blog-backups" }
 # 数据库凭据（推荐使用 MYSQL_PWD 环境变量而非命令行明文密码）
 $DB_NAME     = if ($env:BACKUP_DB_NAME)     { $env:BACKUP_DB_NAME }     else { "blog_db" }
 $DB_USER     = if ($env:BACKUP_DB_USER)     { $env:BACKUP_DB_USER }     else { "root" }

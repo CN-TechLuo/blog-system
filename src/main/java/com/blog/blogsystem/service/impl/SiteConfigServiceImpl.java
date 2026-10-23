@@ -5,6 +5,12 @@ import com.blog.blogsystem.mapper.SiteConfigMapper;
 import com.blog.blogsystem.service.SiteConfigService;
 import org.springframework.stereotype.Service;
 
+/**
+ * 站点配置实现
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/19
+ */
 @Service
 public class SiteConfigServiceImpl implements SiteConfigService {
 

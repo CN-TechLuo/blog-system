@@ -7,15 +7,23 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.geom.AffineTransform;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.UUID;
 
 /**
- * 图形验证码（算术题 SVG，无第三方依赖）：
- * - 注册/登录前置校验，缓解撞库与批量注册
- * - 单次有效、5 分钟过期、定时清理
- * - app.captcha.enabled=false 时关闭校验（开发/内网环境）
- * - 存储可插拔（CaptchaStore）：单机内存 / Redis 多实例共享（CAPTCHA_STORE=redis）
+ * 图形验证码（4 位字符 PNG，Java2D 绘制）： - 注册/登录前置校验，缓解撞库与批量注册 - 单次有效、5 分钟过期、定时清理 - 关闭时 fail-closed（拒绝登录/注册），避免配置失手导致防护失效 - 存储可插拔（CaptchaStore）：单机内存 / Redis 多实例共享（CAPTCHA_STORE=redis）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/21
  */
 @Service
 public class CaptchaService {
@@ -23,6 +31,15 @@ public class CaptchaService {
     private static final Logger log = LoggerFactory.getLogger(CaptchaService.class);
     private static final long TTL_MS = 5 * 60 * 1000L;
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final int WIDTH = 140;
+    private static final int HEIGHT = 46;
+
+    /** 去除 0/O/1/I 等易混字符，降低正常用户识别成本 */
+    private static final char[] CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
+
+    static {
+        System.setProperty("java.awt.headless", "true");
+    }
 
     private final CaptchaStore store;
 
@@ -34,30 +51,28 @@ public class CaptchaService {
     }
 
     /**
-     * 生成验证码，返回 captchaId + SVG 字符串（前端直接渲染）
+     * 生成验证码，返回 captchaId + PNG data URI（前端直接用 img src 渲染）
      */
     public CaptchaResponse generate() {
-        int a = RANDOM.nextInt(9) + 1;
-        int b = RANDOM.nextInt(9) + 1;
-        boolean plus = RANDOM.nextBoolean();
-        int answer = plus ? a + b : a - b;
-        String op = plus ? "+" : "-";
-        String expression = a + " " + op + " " + b + " = ?";
-
+        String code = randomCode(4);
         String id = UUID.randomUUID().toString().replace("-", "");
-        store.put(id, String.valueOf(answer), TTL_MS);
-
-        return new CaptchaResponse(id, renderSvg(expression), enabled);
+        store.put(id, code, TTL_MS);
+        return new CaptchaResponse(id, renderPng(code), enabled);
     }
 
     /**
-     * 校验并作废（单次有效）。验证码关闭时直接通过。
+     * 校验并作废（单次有效，忽略大小写）。验证码关闭时按 fail-closed 拒绝。
      */
     public boolean verify(String captchaId, String answer) {
-        if (!enabled) return true;
-        if (captchaId == null || captchaId.isBlank() || answer == null || answer.isBlank()) return false;
+        if (!enabled) {
+            log.error("验证码功能已关闭，按 fail-closed 策略拒绝请求");
+            return false;
+        }
+        if (captchaId == null || captchaId.isBlank() || answer == null || answer.isBlank()) {
+            return false;
+        }
         String expected = store.take(captchaId);
-        return expected != null && expected.equals(answer.trim());
+        return expected != null && expected.equalsIgnoreCase(answer.trim());
     }
 
     @Scheduled(fixedRate = 300_000)
@@ -65,24 +80,65 @@ public class CaptchaService {
         store.cleanExpired();
     }
 
-    private String renderSvg(String expression) {
-        int w = 140, h = 46;
-        StringBuilder noise = new StringBuilder();
-        for (int i = 0; i < 5; i++) {
-            int x1 = RANDOM.nextInt(w), y1 = RANDOM.nextInt(h);
-            int x2 = RANDOM.nextInt(w), y2 = RANDOM.nextInt(h);
-            noise.append("<line x1=\"").append(x1).append("\" y1=\"").append(y1)
-                 .append("\" x2=\"").append(x2).append("\" y2=\"").append(y2)
-                 .append("\" stroke=\"#c8c9cc\" stroke-width=\"1\"/>");
+    private String randomCode(int length) {
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            sb.append(CODE_CHARS[RANDOM.nextInt(CODE_CHARS.length)]);
         }
-        return "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + w + "\" height=\"" + h + "\" viewBox=\"0 0 "
-                + w + " " + h + "\">"
-                + "<rect width=\"100%\" height=\"100%\" fill=\"#f2f3f5\" rx=\"6\"/>"
-                + noise
-                + "<text x=\"50%\" y=\"50%\" dominant-baseline=\"central\" text-anchor=\"middle\" "
-                + "font-family=\"Consolas,monospace\" font-size=\"20\" font-weight=\"bold\" "
-                + "fill=\"#303133\" letter-spacing=\"1\">" + expression + "</text>"
-                + "</svg>";
+        return sb.toString();
     }
 
+    private String renderPng(String code) {
+        BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g.setColor(new Color(242, 243, 245));
+            g.fillRect(0, 0, WIDTH, HEIGHT);
+
+            for (int i = 0; i < 6; i++) {
+                g.setColor(randomColor(170, 220));
+                g.drawLine(RANDOM.nextInt(WIDTH), RANDOM.nextInt(HEIGHT),
+                        RANDOM.nextInt(WIDTH), RANDOM.nextInt(HEIGHT));
+            }
+
+            int step = (WIDTH - 24) / code.length();
+            for (int i = 0; i < code.length(); i++) {
+                AffineTransform original = g.getTransform();
+                double angle = Math.toRadians(RANDOM.nextInt(41) - 20);
+                int x = 12 + i * step + RANDOM.nextInt(6);
+                int y = 33 + RANDOM.nextInt(7) - 3;
+                g.rotate(angle, x, y);
+                g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 26 + RANDOM.nextInt(5)));
+                g.setColor(randomColor(20, 120));
+                g.drawString(String.valueOf(code.charAt(i)), x, y);
+                g.setTransform(original);
+            }
+
+            for (int i = 0; i < 60; i++) {
+                image.setRGB(RANDOM.nextInt(WIDTH), RANDOM.nextInt(HEIGHT), randomColor(140, 220).getRGB());
+            }
+        } finally {
+            g.dispose();
+        }
+
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            if (!ImageIO.write(image, "png", out)) {
+                throw new IllegalStateException("PNG 编码器不可用");
+            }
+            return "data:image/png;base64," + Base64.getEncoder().encodeToString(out.toByteArray());
+        } catch (Exception e) {
+            throw new IllegalStateException("验证码图片生成失败", e);
+        }
+    }
+
+    private Color randomColor(int min, int max) {
+        int range = max - min;
+        return new Color(
+                min + RANDOM.nextInt(range),
+                min + RANDOM.nextInt(range),
+                min + RANDOM.nextInt(range));
+    }
 }

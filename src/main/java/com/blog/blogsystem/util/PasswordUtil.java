@@ -2,14 +2,25 @@ package com.blog.blogsystem.util;
 
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
+import java.nio.charset.StandardCharsets;
+
+/**
+ * 密码工具：BCrypt 哈希与强度校验
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 public class PasswordUtil {
+
+    /** BCrypt 只处理前 72 字节，超出部分会被静默截断 */
+    public static final int BCRYPT_MAX_BYTES = 72;
 
     /**
      * 密码复杂度正则：必须包含字母、数字和特殊字符，长度 8-50 位。
      * 供 {@code @Pattern} 注解引用，确保 RegisterRequest 和 User 实体使用统一的密码策略。
      */
     public static final String PASSWORD_REGEX =
-        "^(?=.*[a-zA-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?`~]).+$";
+        "^(?=.{8,50}$)(?=.*[a-zA-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?`~]).+$";
 
     // 创建一个 BCryptPasswordEncoder 对象（单例，避免重复创建）
     // cost=12：企业级推荐强度，约为默认 cost=10 的 4 倍计算量；
@@ -22,7 +33,16 @@ public class PasswordUtil {
      * @return 加密后的密文
      */
     public static String encode(String rawPassword) {
+        if (!isBcryptCompatible(rawPassword)) {
+            throw new IllegalArgumentException("密码超过 BCrypt 72 字节上限");
+        }
         return passwordEncoder.encode(rawPassword);
+    }
+
+    /** 密码 UTF-8 字节数是否在 BCrypt 可完整处理的范围内 */
+    public static boolean isBcryptCompatible(String rawPassword) {
+        return rawPassword != null
+                && rawPassword.getBytes(StandardCharsets.UTF_8).length <= BCRYPT_MAX_BYTES;
     }
 
     /**
@@ -32,6 +52,9 @@ public class PasswordUtil {
      * @return true=密码正确，false=密码错误
      */
     public static boolean matches(String rawPassword, String encodedPassword) {
+        if (encodedPassword == null || !isBcryptCompatible(rawPassword)) {
+            return false;
+        }
         return passwordEncoder.matches(rawPassword, encodedPassword);
     }
 }

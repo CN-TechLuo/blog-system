@@ -6,6 +6,9 @@ import lombok.Data;
 
 /**
  * 用户反馈请求
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 @Data
 public class FeedbackCreateRequest {
@@ -15,6 +18,7 @@ public class FeedbackCreateRequest {
     private String title;
 
     @NotBlank(message = "内容不能为空")
+    @Size(max = 5000, message = "内容不能超过5000字")
     private String content;
 
 }

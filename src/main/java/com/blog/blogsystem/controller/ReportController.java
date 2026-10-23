@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -23,8 +24,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Set;
 
 /**
- * 举报上报（需登录）：文章/评论的投诉举报入口，
- * 与管理端处置接口构成投诉举报闭环。
+ * 举报上报（需登录）：文章/评论的投诉举报入口， 与管理端处置接口构成投诉举报闭环。
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/21
  */
 @RestController
 @RequestMapping("/api/report")
@@ -80,7 +83,13 @@ public class ReportController {
         report.setReason(request.getReason().trim());
         report.setDetail(request.getDetail() == null || request.getDetail().isBlank()
                 ? null : request.getDetail().trim());
-        int rows = reportMapper.insert(report);
+        int rows;
+        try {
+            rows = reportMapper.insert(report);
+        } catch (DuplicateKeyException e) {
+            // 唯一键 uk_reporter_target 兜底，解决“先查后插”的并发竞态
+            return ResponseEntity.badRequest().body(ApiResponse.fail("您已举报过该内容，请勿重复提交"));
+        }
 
         if (rows > 0) {
             AuditLogger.log("REPORT_SUBMIT", "userId=" + userId + ", targetType=" + targetType

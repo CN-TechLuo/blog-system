@@ -12,6 +12,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 图形验证码（公开接口）：注册/登录前获取
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/21
  */
 @RestController
 @RequestMapping("/api/captcha")

@@ -1,21 +1,23 @@
-MIT License
+Copyright (c) 2026 CN-TechLuo. All rights reserved.
 
-Copyright (c) 2026 CN-TechLuo
+本项目（包含源代码、文档及相关资源，以下简称“本作品”）的版权归作者（CN-TechLuo）所有。
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. 授权范围：
+特此授予任何人免费查看、下载、复制和修改本作品的代码的权利，但仅限于个人学习、技术交流。
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+2. 限制条款：
+未经作者（CN-TechLuo）明确的书面授权，严禁将本作品或其任何衍生作品用于任何形式的商业用途，包括但不限于：
+- 在商业产品或项目中直接或间接使用本作品代码；
+- 将本作品代码打包、销售或作为增值服务的一部分；
+- 将本作品代码用于任何以盈利为目的的企业的内部项目。
+作者保留本作品的完整著作权及所有未明确授予的权利。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+3. 免责声明：
+本作品按“原样（AS IS）”提供，不附带任何明示或暗示的担保。在任何情况下，作者均不对因使用或无法使用本作品而产生的任何直接或间接损失、损害或法律责任负责。
+
+----------------------------------------------------------------------
+
+您好！感谢您查阅我的个人项目。
+本项目为我的个人学习成果展示，非常乐意接受技术交流与探讨。
+
+注意：未经本人书面授权，不得将本仓库的任何代码用于任何的商业项目或生产环境。感谢您的理解与尊重！

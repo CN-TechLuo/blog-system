@@ -6,6 +6,9 @@ import java.util.List;
 
 /**
  * 分页响应（被 ApiResponse 包裹，不重复携带 success/message）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 @Getter
 public class PageResponse {

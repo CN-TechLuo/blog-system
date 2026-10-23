@@ -15,8 +15,9 @@ ALTER TABLE `user` ADD COLUMN `avatar_url` VARCHAR(500) DEFAULT NULL AFTER `emai
 ALTER TABLE `user` ADD COLUMN `nickname` VARCHAR(50) DEFAULT NULL AFTER `username`;
 -- 17. V5 管理员: role 字段
 ALTER TABLE `user` ADD COLUMN `role` VARCHAR(20) DEFAULT 'user' AFTER `phone`;
--- 管理员账号通过应用启动时自动提升（admin.bootstrap-username 配置，默认 username=admin），
--- 需先手动注册该用户名（密码自行设置，勿用弱口令）
+-- 管理员引导：先注册普通账号，再配置 ADMIN_BOOTSTRAP_TOKEN 并调用
+-- POST /api/bootstrap/admin（X-Bootstrap-Token + {"userId": <id>}），
+-- 系统已有管理员后接口自动关闭；不再按用户名自动提升。
 
 -- 4. article 表：user_id 索引（作者身份验证、按作者查询文章）
 ALTER TABLE `article` ADD INDEX `idx_user_id` (`user_id`);
@@ -115,32 +116,44 @@ ALTER TABLE `article` ADD COLUMN `cover_url` VARCHAR(500) DEFAULT NULL AFTER `sh
 -- 执行前建议备份: mysqldump -u root -p blog_db > backup.sql
 -- ============================================================
 
+-- 空 user 表时跳过全部孤儿清理，防止子查询空集导致整表清空
+START TRANSACTION;
+
 -- 17.1 删除作者已不存在的文章
-DELETE FROM `article` WHERE user_id NOT IN (SELECT id FROM `user`);
+DELETE FROM `article` WHERE user_id NOT IN (SELECT id FROM `user`)
+   AND EXISTS (SELECT 1 FROM `user`);
 
 -- 17.2 删除评论：评论者或文章已不存在
-DELETE FROM `comment` WHERE user_id NOT IN (SELECT id FROM `user`)
-   OR article_id NOT IN (SELECT id FROM `article`);
+DELETE FROM `comment` WHERE (user_id NOT IN (SELECT id FROM `user`)
+   OR article_id NOT IN (SELECT id FROM `article`))
+   AND EXISTS (SELECT 1 FROM `user`);
 
 -- 17.3 删除点赞：用户或文章已不存在
-DELETE FROM `article_like` WHERE user_id NOT IN (SELECT id FROM `user`)
-   OR article_id NOT IN (SELECT id FROM `article`);
+DELETE FROM `article_like` WHERE (user_id NOT IN (SELECT id FROM `user`)
+   OR article_id NOT IN (SELECT id FROM `article`))
+   AND EXISTS (SELECT 1 FROM `user`);
 
 -- 17.4 删除收藏：用户或文章已不存在
-DELETE FROM `bookmark` WHERE user_id NOT IN (SELECT id FROM `user`)
-   OR article_id NOT IN (SELECT id FROM `article`);
+DELETE FROM `bookmark` WHERE (user_id NOT IN (SELECT id FROM `user`)
+   OR article_id NOT IN (SELECT id FROM `article`))
+   AND EXISTS (SELECT 1 FROM `user`);
 
 -- 17.5 删除关注关系：任一用户已不存在
-DELETE FROM `follow` WHERE follower_id NOT IN (SELECT id FROM `user`)
-   OR followee_id NOT IN (SELECT id FROM `user`);
+DELETE FROM `follow` WHERE (follower_id NOT IN (SELECT id FROM `user`)
+   OR followee_id NOT IN (SELECT id FROM `user`))
+   AND EXISTS (SELECT 1 FROM `user`);
 
 -- 17.6 删除通知：接收者或触发者已不存在，或文章已删除
-DELETE FROM `notification` WHERE user_id NOT IN (SELECT id FROM `user`)
-   OR from_user_id NOT IN (SELECT id FROM `user`)
-   OR (article_id IS NOT NULL AND article_id NOT IN (SELECT id FROM `article`));
+DELETE FROM `notification` WHERE (user_id NOT IN (SELECT id FROM `user`)
+   OR (from_user_id IS NOT NULL AND from_user_id NOT IN (SELECT id FROM `user`))
+   OR (article_id IS NOT NULL AND article_id NOT IN (SELECT id FROM `article`)))
+   AND EXISTS (SELECT 1 FROM `user`);
 
 -- 17.7 删除反馈：用户已不存在
-DELETE FROM `feedback` WHERE user_id NOT IN (SELECT id FROM `user`);
+DELETE FROM `feedback` WHERE user_id NOT IN (SELECT id FROM `user`)
+   AND EXISTS (SELECT 1 FROM `user`);
+
+COMMIT;
 
 -- ============================================================
 -- 18. V6 密码重置令牌表（找回密码）

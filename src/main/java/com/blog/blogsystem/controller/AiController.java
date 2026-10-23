@@ -1,12 +1,14 @@
 package com.blog.blogsystem.controller;
 
 import com.blog.blogsystem.dto.ApiResponse;
+import com.blog.blogsystem.service.AiCallCounter;
 import com.blog.blogsystem.service.AiService;
 import com.blog.blogsystem.service.AiUsageService;
 import com.blog.blogsystem.util.SensitiveWordFilter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,6 +20,12 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 import java.util.Map;
 import java.util.function.Supplier;
 
+/**
+ * AI 助手接口：写作/润色/摘要/翻译等 12 种模式 + 流式对话，统一走配额与敏感词守卫
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @RestController
 @RequestMapping("/api/ai")
 @Tag(name = "AI 助手", description = "DeepSeek 驱动的写作/聊天能力（登录用户，含每日配额）")
@@ -25,10 +33,15 @@ public class AiController {
 
     private final AiService aiService;
     private final AiUsageService aiUsageService;
+    private final AiCallCounter aiCallCounter;
 
-    public AiController(AiService aiService, AiUsageService aiUsageService) {
+    @Value("${app.ai.max-input-chars:20000}")
+    private int maxInputChars;
+
+    public AiController(AiService aiService, AiUsageService aiUsageService, AiCallCounter aiCallCounter) {
         this.aiService = aiService;
         this.aiUsageService = aiUsageService;
+        this.aiCallCounter = aiCallCounter;
     }
 
     /**
@@ -37,18 +50,30 @@ public class AiController {
     private ApiResponse<Map<String, Object>> guarded(HttpServletRequest request, String type, String input,
                                                      Supplier<ApiResponse<Map<String, Object>>> fn) {
         Integer userId = (Integer) request.getAttribute("userId");
+        if (input != null && input.length() > maxInputChars) {
+            return ApiResponse.fail("输入内容过长，单次最多 " + maxInputChars + " 字符");
+        }
         String quotaErr = aiUsageService.checkQuota(userId);
         if (quotaErr != null) return ApiResponse.fail(quotaErr);
         if (SensitiveWordFilter.containsSensitive(input)) {
             return ApiResponse.fail("内容包含违规词汇，无法处理");
         }
-        ApiResponse<Map<String, Object>> result = fn.get();
-        int outputChars = 0;
-        if (result.isSuccess() && result.getData() != null && result.getData().get("content") != null) {
-            outputChars = String.valueOf(result.getData().get("content")).length();
+
+        aiCallCounter.getAndReset();
+        ApiResponse<Map<String, Object>> result = null;
+        try {
+            result = fn.get();
+            return result;
+        } finally {
+            int outputChars = 0;
+            if (result != null && result.isSuccess() && result.getData() != null
+                    && result.getData().get("content") != null) {
+                outputChars = String.valueOf(result.getData().get("content")).length();
+            }
+            int calls = aiCallCounter.getAndReset();
+            aiUsageService.record(userId, type, input == null ? 0 : input.length(),
+                    outputChars, Math.max(calls, 1));
         }
-        aiUsageService.record(userId, type, input == null ? 0 : input.length(), outputChars);
-        return result;
     }
 
     @PostMapping("/generate")
@@ -98,6 +123,9 @@ public class AiController {
         String message = body.getOrDefault("message", "");
         String history = body.getOrDefault("history", "");
         if (message.isBlank()) return ApiResponse.fail("请输入内容");
+        if (history.length() > maxInputChars) {
+            return ApiResponse.fail("历史对话过长，最多 " + maxInputChars + " 字符");
+        }
         return guarded(request, "chat", message, () -> aiService.chat(message, history));
     }
 
@@ -111,6 +139,9 @@ public class AiController {
         if (message.isBlank()) {
             return errorStream("请输入内容");
         }
+        if (message.length() > maxInputChars || history.length() > maxInputChars) {
+            return errorStream("输入内容过长，单次最多 " + maxInputChars + " 字符");
+        }
         String quotaErr = aiUsageService.checkQuota(userId);
         if (quotaErr != null) {
             return errorStream(quotaErr);
@@ -118,13 +149,16 @@ public class AiController {
         if (SensitiveWordFilter.containsSensitive(message)) {
             return errorStream("内容包含违规词汇，无法处理");
         }
+        aiCallCounter.getAndReset();
         StreamingResponseBody stream = out -> {
             try {
                 aiService.streamChat(message, history, out);
-                aiUsageService.record(userId, "chat_stream", message.length(), 0);
             } catch (Exception e) {
                 out.write("data: [ERROR]AI 服务异常\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 out.flush();
+            } finally {
+                int calls = aiCallCounter.getAndReset();
+                aiUsageService.record(userId, "chat_stream", message.length(), 0, Math.max(calls, 1));
             }
         };
         return ResponseEntity.ok()

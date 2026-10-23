@@ -4,6 +4,12 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+/**
+ * 修改昵称请求
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Data
 public class NicknameRequest {
 

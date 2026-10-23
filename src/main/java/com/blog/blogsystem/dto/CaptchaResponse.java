@@ -6,7 +6,11 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * 图形验证码响应：captchaId 用于提交校验，svg 为内联 SVG 图片
+ * 图形验证码响应：captchaId 用于提交校验，svg 字段为 PNG data URI
+ * （字段名保留以兼容旧前端，值不再包含可读文本）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/21
  */
 @Setter
 @Getter

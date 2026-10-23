@@ -29,4 +29,10 @@ class PageUtilTest {
         assertEquals(40, PageUtil.start(3, 20));
     }
 
+    @Test
+    void startShouldNotOverflowOnHugePage() {
+        assertEquals(5000, PageUtil.start(2_000_000_000, 10));
+        assertEquals(0, PageUtil.start(Integer.MIN_VALUE, 10));
+    }
+
 }

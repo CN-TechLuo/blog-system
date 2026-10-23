@@ -12,11 +12,19 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
+/**
+ * 安全响应头过滤器：为所有响应添加 X-Content-Type-Options 等防护头
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Component
 public class SecurityHeadersFilter implements Filter {
 
-    /** 仅对 API 与静态上传资源响应附加 CSP，避免影响 Swagger UI 页面 */
+    /** API / 上传资源的严格 CSP */
     private static final String CSP_VALUE = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+    /** 非 API 响应（错误页等）的兜底 CSP，Swagger 路径除外 */
+    private static final String CSP_FALLBACK = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -34,18 +42,22 @@ public class SecurityHeadersFilter implements Filter {
         httpResponse.setHeader("Origin-Agent-Cluster", "?1");
         httpResponse.setHeader("X-Download-Options", "noopen");
 
-        // HSTS 仅在 HTTPS 下下发，防止用户被 HTTP 明文响应误导
-        if (httpRequest.isSecure()) {
-            httpResponse.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-        }
+        // HSTS 始终下发：浏览器只在 HTTPS 下生效；反向代理终止 TLS 时 isSecure() 不可靠
+        httpResponse.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 
         String path = httpRequest.getRequestURI();
-        if (path.startsWith("/api/") || path.startsWith("/uploads/")) {
-            httpResponse.setHeader("Content-Security-Policy", CSP_VALUE);
+        boolean swagger = path.startsWith("/swagger-ui") || path.startsWith("/v3/api-docs")
+                || path.startsWith("/api-docs");
+        if (!swagger) {
+            if (path.startsWith("/api/") || path.startsWith("/uploads/")) {
+                httpResponse.setHeader("Content-Security-Policy", CSP_VALUE);
+            } else {
+                httpResponse.setHeader("Content-Security-Policy", CSP_FALLBACK);
+            }
         }
         if (path.startsWith("/api/")) {
-            // 认证相关响应禁止任何缓存，防止 token 被中间缓存留存
-            if (path.contains("/login") || path.contains("/refresh")) {
+            // 认证/重置/验证码/数据导出等敏感响应禁止任何缓存
+            if (isSensitivePath(path)) {
                 httpResponse.setHeader("Cache-Control", "no-store");
             }
             // API 响应不允许被第三方页面以 no-cors 方式读取
@@ -53,6 +65,19 @@ public class SecurityHeadersFilter implements Filter {
         }
 
         chain.doFilter(request, response);
+    }
+
+    private boolean isSensitivePath(String path) {
+        return path.contains("/login")
+                || path.contains("/refresh")
+                || path.contains("/password")
+                || path.contains("/forgot-")
+                || path.contains("/captcha")
+                || path.contains("/logout")
+                || path.contains("/export-data")
+                || path.contains("/delete-account")
+                || path.contains("/audit-logs")
+                || path.startsWith("/api/bootstrap");
     }
 
     @Override

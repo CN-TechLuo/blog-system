@@ -10,6 +10,12 @@ import javax.crypto.SecretKey;
 import java.util.Base64;
 import java.util.Date;
 
+/**
+ * JWT 工具：HS256 签发/解析（access 30 分钟 + refresh 7 天，含 jti 与 tokenVersion）
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 public class JwtUtil {
 
     private static final Logger log = LoggerFactory.getLogger(JwtUtil.class);
@@ -22,6 +28,12 @@ public class JwtUtil {
 
     /** JWT 受众标识：解析时强校验 */
     public static final String AUDIENCE = "blog-web";
+
+    /** Access Token 类型声明 */
+    public static final String TYPE_ACCESS = "access";
+
+    /** Refresh Token 类型声明 */
+    public static final String TYPE_REFRESH = "refresh";
 
     /** Access Token 有效期：30 分钟（企业级建议 15-30 分钟，缩短泄露窗口） */
     public static final long ACCESS_EXPIRATION_MS = 30 * 60 * 1000L;
@@ -67,18 +79,15 @@ public class JwtUtil {
     }
 
     public static String generateRefreshToken(Integer userId, String username, int tokenVersion) {
-        return generateToken(userId, username, REFRESH_EXPIRATION_MS, tokenVersion);
+        return generateToken(userId, username, REFRESH_EXPIRATION_MS, tokenVersion, TYPE_REFRESH);
     }
 
-    public static String generateAccessToken(Integer userId, String username) {
-        return generateToken(userId, username, ACCESS_EXPIRATION_MS, 0);
+    public static String generateAccessToken(Integer userId, String username, int tokenVersion) {
+        return generateToken(userId, username, ACCESS_EXPIRATION_MS, tokenVersion, TYPE_ACCESS);
     }
 
-    private static String generateToken(Integer userId, String username, long expirationMs) {
-        return generateToken(userId, username, expirationMs, 0);
-    }
-
-    private static String generateToken(Integer userId, String username, long expirationMs, int tokenVersion) {
+    private static String generateToken(Integer userId, String username, long expirationMs,
+                                        int tokenVersion, String type) {
         Date now = new Date();
         Date expiration = new Date(now.getTime() + expirationMs);
         return Jwts.builder()
@@ -88,6 +97,7 @@ public class JwtUtil {
                 .subject(username)
                 .claim("userId", userId)
                 .claim("tokenVersion", tokenVersion)
+                .claim("typ", type)
                 .issuedAt(now)
                 .expiration(expiration)
                 .signWith(KEY, Jwts.SIG.HS256)
@@ -132,10 +142,27 @@ public class JwtUtil {
         try {
             Claims claims = parseToken(token);
             Object version = claims.get("tokenVersion");
-            return version instanceof Integer ? (Integer) version : 0;
+            return version instanceof Number ? ((Number) version).intValue() : null;
         } catch (Exception e) {
-            return 0;
+            return null;
         }
+    }
+
+    public static String getTokenType(String token) {
+        try {
+            Object type = parseToken(token).get("typ");
+            return type instanceof String ? (String) type : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static boolean isAccessToken(String token) {
+        return TYPE_ACCESS.equals(getTokenType(token));
+    }
+
+    public static boolean isRefreshToken(String token) {
+        return TYPE_REFRESH.equals(getTokenType(token));
     }
 
     private static Claims parseToken(String token) {

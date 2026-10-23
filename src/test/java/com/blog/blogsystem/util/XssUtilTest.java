@@ -27,6 +27,7 @@ class XssUtilTest {
         String clean = XssUtil.sanitizeHtml(dirty);
         assertFalse(clean.contains("<script"));
         assertFalse(clean.contains("onerror"));
+        assertFalse(clean.contains("evil.com"), "外链图片必须移除，防止追踪读者");
         assertTrue(clean.contains("<p>正文</p>"));
     }
 
@@ -36,7 +37,15 @@ class XssUtilTest {
         String clean = XssUtil.sanitizeHtml(html);
         assertTrue(clean.contains("<h2>标题</h2>"));
         assertTrue(clean.contains("href=\"https://example.com\""));
+        assertTrue(clean.contains("rel=\"noopener noreferrer\""));
         assertTrue(clean.contains("<pre><code>code</code></pre>"));
+    }
+
+    @Test
+    void sanitizeShouldKeepUploadedImage() {
+        String html = "<p><img src='/uploads/cover_1_abcd.jpg' alt='cover'></p>";
+        String clean = XssUtil.sanitizeHtml(html);
+        assertTrue(clean.contains("src=\"/uploads/cover_1_abcd.jpg\""));
     }
 
     @Test

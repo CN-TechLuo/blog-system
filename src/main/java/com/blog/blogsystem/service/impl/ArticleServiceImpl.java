@@ -31,6 +31,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+/**
+ * 文章业务实现：敏感词审核、XSS 清洗、热榜缓存与失效
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Service
 public class ArticleServiceImpl implements ArticleService {
 

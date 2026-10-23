@@ -58,8 +58,9 @@ git push origin v1.0.0
 
 ```bash
 # 填写密钥
-cp .env.example .env   # 编辑：DB_PASSWORD / JWT_SECRET / DEEPSEEK_API_KEY / CORS_ORIGINS
+cp .env.example .env   # 必填：DB_PASSWORD / JWT_SECRET / DEEPSEEK_API_KEY / CORS_ORIGINS；DB_APP_PASSWORD / DB_BACKUP_PASSWORD 仅启用最小权限账号时使用
 openssl rand -base64 32   # 生成 JWT_SECRET
+openssl rand -base64 48 > ops/backup.key && chmod 600 ops/backup.key   # 备份加密密钥
 
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml logs -f backend
@@ -75,20 +76,24 @@ docker compose -f docker-compose.prod.yml logs -f backend
 ## 5. 数据备份与恢复
 
 ```bash
-# 方式一：compose 内置备份服务（每日 02:30，保留 30 份，见 docker-compose.prod.yml backup 服务）
-# 方式二：宿主机脚本 + crontab
-# crontab 示例（Linux）: 30 2 * * * DB_PASSWORD=xxx /opt/blog/ops/backup.sh /opt/blog/backups >> /opt/blog/logs/backup.log 2>&1
-# 恢复: ./ops/restore.sh /backups/blog_db_20260820_023000.sql.gz
+# 首次：生成备份加密密钥（异地保存，丢失后备份无法恢复）
+openssl rand -base64 48 > ops/backup.key && chmod 600 ops/backup.key
 
-# Windows PowerShell（宿主机）:
-powershell -File ops/backup-db.ps1 -BackupDir D:\backups
+# 方式一：compose 内置 backup 服务（容器启动即备份，之后每 24h，保留 30 天）
+# 方式二：宿主机脚本 + crontab（加密 + 完整性校验）
+# crontab 示例（Linux）:
+# 30 2 * * * DB_USER=blog_backup DB_PASSWORD=xxx BACKUP_KEY_FILE=/opt/blog/ops/backup.key \
+#   bash /opt/blog/ops/backup.sh /opt/blog/backups >> /opt/blog/logs/backup.log 2>&1
 
-# 备份文件必须加密后异地存储（Linux 示例）：
-tar czf - /backup | openssl enc -aes-256-cbc -salt -pbkdf2 -pass file:/root/.backup-pass -out backup-$(date +%F).tar.gz.enc
+# 恢复（会覆盖当前库，先确认）:
+DB_USER=blog_app DB_PASSWORD=xxx BACKUP_KEY_FILE=ops/backup.key \
+  bash ops/restore.sh /backups/blog_db_20260820_023000.sql.gz.enc
 
-# 恢复演练（至少每季度一次）：
-./ops/restore.sh backup-xxxx.sql.gz
+# Windows PowerShell（宿主机，默认写到 %USERPROFILE%\blog-backups）:
+powershell -File ops/backup-db.ps1
 ```
+
+**已有 MySQL 数据卷**不会再次执行 `ops/mysql-init/01-users.sh`。升级到最小权限账号时，请手工创建 `blog_app` / `blog_backup`（参考该脚本），或备份后重建数据卷。
 
 ## 6. 监控告警
 

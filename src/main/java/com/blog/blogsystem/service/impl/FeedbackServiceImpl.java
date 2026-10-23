@@ -16,6 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * 反馈业务实现
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
+ */
 @Service
 public class FeedbackServiceImpl implements FeedbackService {
 

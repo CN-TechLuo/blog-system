@@ -1,5 +1,6 @@
 package com.blog.blogsystem.config;
 
+import com.blog.blogsystem.util.ClientIpResolver;
 import com.blog.blogsystem.util.RateLimiterUtil;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
@@ -16,15 +17,22 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 
 /**
- * L7 全局 API 限流：所有 /api/** 请求按 IP 限流（默认 600 次/分钟），
- * 防止爬虫/DoS 拖垮服务。业务层仍保留更细粒度的限流（登录/注册/找回/AI）。
- * 信任模型：反向代理必须覆盖 X-Forwarded-For（勿透传客户端伪造值）。
+ * L7 全局 API 限流：所有 /api/** 请求按 IP 限流（默认 600 次/分钟）， 防止爬虫/DoS 拖垮服务。业务层仍保留更细粒度的限流（登录/注册/找回/AI）。 信任模型：反向代理必须覆盖 X-Forwarded-For（勿透传客户端伪造值）。
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 @Component
 public class GlobalRateLimitFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalRateLimitFilter.class);
     private static final int MAX_PER_IP_MINUTE = 600;
+
+    private final ClientIpResolver clientIpResolver;
+
+    public GlobalRateLimitFilter(ClientIpResolver clientIpResolver) {
+        this.clientIpResolver = clientIpResolver;
+    }
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -42,7 +50,7 @@ public class GlobalRateLimitFilter implements Filter {
             return;
         }
 
-        String ip = resolveClientIp(httpRequest);
+        String ip = clientIpResolver.resolve(httpRequest);
         if (RateLimiterUtil.isBlocked("api:ip:" + ip, MAX_PER_IP_MINUTE)) {
             log.warn("全局 API 限流触发: IP={}, path={}", ip, path);
             httpResponse.setStatus(429);
@@ -54,19 +62,6 @@ public class GlobalRateLimitFilter implements Filter {
         }
 
         chain.doFilter(request, response);
-    }
-
-    private String resolveClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            int comma = xff.indexOf(',');
-            return (comma > 0 ? xff.substring(0, comma) : xff).trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-        return request.getRemoteAddr();
     }
 
     @Override

@@ -10,8 +10,10 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * AI 用量统计与每日配额（企业级成本管控）
- * 每个用户每日默认限额 100 次调用，超限拒绝；全部调用落库可审计。
+ * AI 用量统计与每日配额（企业级成本管控） 每个用户每日默认限额 100 次调用，超限拒绝；全部调用落库可审计。
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/19
  */
 @Service
 public class AiUsageService {
@@ -42,9 +44,13 @@ public class AiUsageService {
     }
 
     public void record(Integer userId, String apiType, int inputChars, int outputChars) {
+        record(userId, apiType, inputChars, outputChars, 1);
+    }
+
+    public void record(Integer userId, String apiType, int inputChars, int outputChars, int callCount) {
         if (userId == null) return;
         try {
-            aiUsageMapper.insert(userId, apiType, inputChars, outputChars);
+            aiUsageMapper.insert(userId, apiType, inputChars, outputChars, Math.max(callCount, 1));
         } catch (Exception e) {
             log.warn("AI 用量记录失败: userId={}, type={}", userId, apiType, e);
         }

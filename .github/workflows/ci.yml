@@ -6,6 +6,8 @@ on:
   pull_request:
     branches: [main]
 
+# 必须在仓库 Secrets 中配置 CI_DB_PASSWORD 与 CI_JWT_SECRET。
+# 缺失时 MySQL/JWT 初始化会直接失败（fail-closed），不再使用可解码的硬编码回退值。
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -13,7 +15,7 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci-db-password' }}
+          MYSQL_ROOT_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
           MYSQL_DATABASE: blog_db
         ports:
           - 3306:3306
@@ -28,9 +30,11 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Wait for MySQL
+        env:
+          MYSQL_PWD: ${{ secrets.CI_DB_PASSWORD }}
         run: |
           for i in $(seq 1 30); do
-            if mysql -h 127.0.0.1 -u root -p${{ secrets.CI_DB_PASSWORD || 'ci-db-password' }} -e "SELECT 1" > /dev/null 2>&1; then
+            if mysql -h 127.0.0.1 -u root -e "SELECT 1" > /dev/null 2>&1; then
               echo "MySQL is ready"
               break
             fi
@@ -41,8 +45,8 @@ jobs:
         run: ./mvnw verify
         env:
           DB_USERNAME: root
-          DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci-db-password' }}
-          JWT_SECRET: ${{ secrets.CI_JWT_SECRET || 'Y2ktand0LXNlY3JldC1mb3ItY2ktb25seS0zMi1ieXRlcyE=' }}
+          DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+          JWT_SECRET: ${{ secrets.CI_JWT_SECRET }}
           SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/blog_db?useSSL=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8
 
   docker:

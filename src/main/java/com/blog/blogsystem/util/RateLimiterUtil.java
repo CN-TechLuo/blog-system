@@ -6,10 +6,10 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 滑动窗口限流工具（分钟 + 天两个维度），与业务解耦，
- * 供登录/注册/找回密码/AI 等场景复用。
- * 底层存储通过 {@link #init(RateLimitStore)} 注入：
- * 单机默认内存实现，多实例由 RateLimitConfig 切换为 Redis 实现。
+ * 滑动窗口限流工具（分钟 + 天两个维度），与业务解耦， 供登录/注册/找回密码/AI 等场景复用。 底层存储通过 {@link #init(RateLimitStore)} 注入： 单机默认内存实现，多实例由 RateLimitConfig 切换为 Redis 实现。
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 public final class RateLimiterUtil {
 

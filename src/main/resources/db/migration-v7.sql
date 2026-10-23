@@ -10,26 +10,39 @@
 USE `blog_db`;
 
 -- ------------------------------------------------------------
--- 1. 孤儿数据清理
+-- 1. 孤儿数据清理（空 user 表时全部跳过，防止子查询空集导致整表清空）
 -- ------------------------------------------------------------
-DELETE FROM `article` WHERE user_id NOT IN (SELECT id FROM `user`);
-DELETE FROM `comment` WHERE user_id NOT IN (SELECT id FROM `user`)
+START TRANSACTION;
+
+DELETE FROM `article` WHERE user_id NOT IN (SELECT id FROM `user`)
+   AND EXISTS (SELECT 1 FROM `user`);
+DELETE FROM `comment` WHERE (user_id NOT IN (SELECT id FROM `user`)
    OR article_id NOT IN (SELECT id FROM `article`)
-   OR (parent_id IS NOT NULL AND parent_id NOT IN (SELECT id FROM (SELECT id FROM `comment`) c));
-DELETE FROM `article_like` WHERE user_id NOT IN (SELECT id FROM `user`)
-   OR article_id NOT IN (SELECT id FROM `article`);
-DELETE FROM `bookmark` WHERE user_id NOT IN (SELECT id FROM `user`)
-   OR article_id NOT IN (SELECT id FROM `article`);
-DELETE FROM `follow` WHERE follower_id NOT IN (SELECT id FROM `user`)
-   OR followee_id NOT IN (SELECT id FROM `user`);
-DELETE FROM `notification` WHERE user_id NOT IN (SELECT id FROM `user`)
+   OR (parent_id IS NOT NULL AND parent_id NOT IN (SELECT id FROM (SELECT id FROM `comment`) c)))
+   AND EXISTS (SELECT 1 FROM `user`);
+DELETE FROM `article_like` WHERE (user_id NOT IN (SELECT id FROM `user`)
+   OR article_id NOT IN (SELECT id FROM `article`))
+   AND EXISTS (SELECT 1 FROM `user`);
+DELETE FROM `bookmark` WHERE (user_id NOT IN (SELECT id FROM `user`)
+   OR article_id NOT IN (SELECT id FROM `article`))
+   AND EXISTS (SELECT 1 FROM `user`);
+DELETE FROM `follow` WHERE (follower_id NOT IN (SELECT id FROM `user`)
+   OR followee_id NOT IN (SELECT id FROM `user`))
+   AND EXISTS (SELECT 1 FROM `user`);
+DELETE FROM `notification` WHERE (user_id NOT IN (SELECT id FROM `user`)
    OR (from_user_id IS NOT NULL AND from_user_id NOT IN (SELECT id FROM `user`))
    OR (article_id IS NOT NULL AND article_id NOT IN (SELECT id FROM `article`))
-   OR (comment_id IS NOT NULL AND comment_id NOT IN (SELECT id FROM `comment`));
-DELETE FROM `feedback` WHERE user_id NOT IN (SELECT id FROM `user`);
-DELETE FROM `password_reset_token` WHERE user_id NOT IN (SELECT id FROM `user`);
-DELETE FROM `article_tag` WHERE article_id NOT IN (SELECT id FROM `article`)
-   OR tag_id NOT IN (SELECT id FROM `tag`);
+   OR (comment_id IS NOT NULL AND comment_id NOT IN (SELECT id FROM `comment`)))
+   AND EXISTS (SELECT 1 FROM `user`);
+DELETE FROM `feedback` WHERE user_id NOT IN (SELECT id FROM `user`)
+   AND EXISTS (SELECT 1 FROM `user`);
+DELETE FROM `password_reset_token` WHERE user_id NOT IN (SELECT id FROM `user`)
+   AND EXISTS (SELECT 1 FROM `user`);
+DELETE FROM `article_tag` WHERE (article_id NOT IN (SELECT id FROM `article`)
+   OR tag_id NOT IN (SELECT id FROM `tag`))
+   AND EXISTS (SELECT 1 FROM `article`) AND EXISTS (SELECT 1 FROM `tag`);
+
+COMMIT;
 
 -- ------------------------------------------------------------
 -- 2. 文章热榜字段与索引

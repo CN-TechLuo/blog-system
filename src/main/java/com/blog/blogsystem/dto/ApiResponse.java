@@ -4,6 +4,9 @@ import lombok.Getter;
 
 /**
  * 统一 API 响应封装
+ *
+ * @author CN-TechLuo
+ * @date 2026/08/17
  */
 @Getter
 public class ApiResponse<T> {
